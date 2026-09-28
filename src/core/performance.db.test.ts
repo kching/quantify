@@ -47,9 +47,66 @@ describe('trade and performance persistence', () => {
     expect(storedTrades.map((trade) => trade.side)).toEqual(['BUY', 'SELL']);
     const performance = await database.listPerformance(portfolio.id);
     expect(performance.holdings).toHaveLength(4);
-    expect(performance.holdings.at(-1)).toMatchObject({ symbol: 'MQG.AX', quantity: 8, marketPrice: 110, marketValue: 880, profitLoss: 110 });
+    expect(performance.holdings.at(-1)).toMatchObject({ symbol: 'MQG.AX', quantity: 8, marketPrice: 110, averageUnitPrice: 100.5, marketValue: 880, profitLoss: 110 });
     expect(performance.portfolio.at(-1)).toMatchObject({ cashBalance: 130, marketValue: 880, totalValue: 1_010, contributedCapital: 900, profitLoss: 110 });
     expect(await database.listCashTransactions(portfolio.id)).toHaveLength(2);
     expect(performance.holdings.some((point) => point.marketPrice === 999)).toBe(false);
+  });
+
+  it('returns one year of holding snapshots for selectable pulse-chart ranges', async () => {
+    const portfolio = await database.createPortfolio('Holding history window');
+    const inRangeTimestamp = now - 180 * 24 * HOUR;
+    const outOfRangeTimestamp = now - 400 * 24 * HOUR;
+    await database.savePerformanceSnapshots(portfolio.id, {
+      holdings: [
+        { symbol: 'AAA.AX', timestamp: inRangeTimestamp, quantity: 1, marketPrice: 100, averageUnitPrice: 90, marketValue: 100, profitLoss: 10 },
+        { symbol: 'AAA.AX', timestamp: outOfRangeTimestamp, quantity: 1, marketPrice: 90, averageUnitPrice: 90, marketValue: 90, profitLoss: 0 },
+      ],
+      portfolio: [],
+    });
+
+    const performance = await database.listPerformance(portfolio.id);
+    expect(performance.holdings.map((point) => point.timestamp)).toContain(inRangeTimestamp);
+    expect(performance.holdings.map((point) => point.timestamp)).not.toContain(outOfRangeTimestamp);
+  });
+
+  it('prevents deleting a buy that supports later sells and clears snapshots after a valid deletion', async () => {
+    const portfolio = await database.createPortfolio('Trade deletion');
+    const buy = await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: tradeTime });
+    const sell = await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'SELL', quantity: 2, price: 120, brokerage: 5, timestamp: tradeTime + HOUR });
+    await expect(database.deletePortfolioTrade(portfolio.id, buy.id)).rejects.toThrow('later sell would exceed the remaining position');
+    await database.savePerformanceSnapshots(portfolio.id, {
+      holdings: [{ symbol: 'AAA.AX', timestamp: now - HOUR, quantity: 10, marketPrice: 100, averageUnitPrice: 100.5, marketValue: 1_000, profitLoss: -5 }],
+      portfolio: [{ timestamp: now - HOUR, cashBalance: -1_005, marketValue: 1_000, totalValue: -5, contributedCapital: 0, profitLoss: -5 }],
+    });
+
+    expect(await database.deletePortfolioTrade(portfolio.id, sell.id)).toMatchObject({ id: sell.id, side: 'SELL' });
+    expect(await database.listTrades(portfolio.id)).toHaveLength(1);
+    expect(await database.listPerformance(portfolio.id)).toEqual({ holdings: [], portfolio: [] });
+  });
+
+  it('serves six newest trades per page and applies ticker filters before pagination', async () => {
+    const portfolio = await database.createPortfolio('Trade pagination');
+    const insertedTrades = [];
+    for (let index = 0; index < 8; index += 1) {
+      insertedTrades.push(await database.recordTrade({
+        portfolioId: portfolio.id, symbol: index < 3 ? 'AAA.AX' : 'BBB.AX', side: 'BUY', quantity: 1,
+        price: 100 + index, brokerage: 0, timestamp: tradeTime + index * HOUR,
+      }));
+    }
+
+    const pageOne = await database.listTradePage(portfolio.id, 1);
+    const pageTwo = await database.listTradePage(portfolio.id, 2);
+    const filtered = await database.listTradePage(portfolio.id, 1, 'BBB.AX');
+    expect(pageOne.trades).toHaveLength(6);
+    expect(pageOne.trades[0].id).toBe(insertedTrades[7].id);
+    expect(pageTwo.trades.map((trade) => trade.id)).toEqual([
+      insertedTrades[1].id,
+      insertedTrades[0].id,
+    ]);
+    expect(filtered.trades).toHaveLength(5);
+    expect(filtered.trades.every((trade) => trade.symbol === 'BBB.AX')).toBe(true);
+    expect(filtered.total).toBe(5);
+    expect(filtered.tickers).toEqual(['AAA.AX', 'BBB.AX']);
   });
 });

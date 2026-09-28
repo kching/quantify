@@ -26,6 +26,7 @@ export function calculatePerformanceSnapshots(
     const points: HoldingPerformancePoint[] = [];
     let tradeIndex = 0;
     let quantity = 0;
+    let costBasis = 0;
     let cashFlow = 0;
 
     for (const candle of orderedCandles) {
@@ -34,9 +35,13 @@ export function calculatePerformanceSnapshots(
         const trade = orderedTrades[tradeIndex];
         if (trade.side === 'BUY') {
           quantity += trade.quantity;
+          costBasis += trade.quantity * trade.price + trade.brokerage;
           cashFlow -= trade.quantity * trade.price + trade.brokerage;
         } else {
+          const averageUnitPrice = quantity > 0 ? costBasis / quantity : 0;
+          costBasis -= averageUnitPrice * trade.quantity;
           quantity -= trade.quantity;
+          if (Math.abs(quantity) < 1e-10) costBasis = 0;
           cashFlow += trade.quantity * trade.price - trade.brokerage;
         }
         tradeIndex += 1;
@@ -49,6 +54,7 @@ export function calculatePerformanceSnapshots(
         timestamp: closeTimestamp,
         quantity: Math.abs(quantity) < 1e-10 ? 0 : quantity,
         marketPrice: candle.close,
+        averageUnitPrice: quantity > 0 ? costBasis / quantity : 0,
         marketValue,
         profitLoss: marketValue + cashFlow,
       });

@@ -38,7 +38,7 @@ const cashTransactions = sqliteTable('cash_transactions', {
 const holdingPerformance = sqliteTable('holding_performance', {
   portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }), symbol: text('symbol').notNull(),
   timestamp: integer('timestamp').notNull(), quantity: real('quantity').notNull(), marketPrice: real('market_price').notNull(),
-  marketValue: real('market_value').notNull(), profitLoss: real('profit_loss').notNull(),
+  averageUnitPrice: real('average_unit_price').notNull().default(0), marketValue: real('market_value').notNull(), profitLoss: real('profit_loss').notNull(),
 }, (table) => [uniqueIndex('holding_performance_once_per_candle').on(table.portfolioId, table.symbol, table.timestamp)]);
 const portfolioPerformance = sqliteTable('portfolio_performance', {
   portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }), timestamp: integer('timestamp').notNull(),
@@ -65,7 +65,7 @@ async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS trades_portfolio_symbol_time ON trades(portfolio_id, symbol, timestamp);
     CREATE TABLE IF NOT EXISTS cash_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, type TEXT NOT NULL CHECK(type IN ('DEPOSIT', 'WITHDRAWAL')), amount REAL NOT NULL CHECK(amount > 0), timestamp INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '');
     CREATE INDEX IF NOT EXISTS cash_transactions_portfolio_time ON cash_transactions(portfolio_id, timestamp);
-    CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
+    CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, average_unit_price REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
     CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
   `);
   const performanceColumns = await client.execute('PRAGMA table_info(portfolio_performance)');
@@ -74,6 +74,10 @@ async function initializeDatabase(): Promise<void> {
   if (!columnNames.has('total_value')) await client.execute('ALTER TABLE portfolio_performance ADD COLUMN total_value REAL NOT NULL DEFAULT 0');
   if (!columnNames.has('contributed_capital')) await client.execute('ALTER TABLE portfolio_performance ADD COLUMN contributed_capital REAL NOT NULL DEFAULT 0');
   await client.execute('UPDATE portfolio_performance SET total_value = market_value WHERE total_value = 0 AND market_value != 0');
+  const holdingColumns = await client.execute('PRAGMA table_info(holding_performance)');
+  if (!holdingColumns.rows.some((row) => String(row.name) === 'average_unit_price')) {
+    await client.execute('ALTER TABLE holding_performance ADD COLUMN average_unit_price REAL NOT NULL DEFAULT 0');
+  }
   const adminUser = await db.select({ id: users.id }).from(users).where(eq(users.id, 'admin')).get();
   if (!adminUser) {
     await db.insert(users).values({ id: 'admin', name: 'Admin' }).run();
@@ -118,6 +122,34 @@ export async function listTrades(portfolioId: number): Promise<PortfolioTrade[]>
   return db.select().from(trades).where(eq(trades.portfolioId, portfolioId)).orderBy(trades.timestamp, trades.id).all() as Promise<PortfolioTrade[]>;
 }
 
+export interface PortfolioTradePage {
+  trades: PortfolioTrade[];
+  tickers: string[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+export async function listTradePage(portfolioId: number, requestedPage: number, symbol?: string): Promise<PortfolioTradePage> {
+  await ensureDatabase();
+  const pageSize = 6;
+  const where = symbol
+    ? and(eq(trades.portfolioId, portfolioId), eq(trades.symbol, symbol))
+    : eq(trades.portfolioId, portfolioId);
+  const [countRow, tickerRows] = await Promise.all([
+    db.select({ count: sql<number>`count(*)` }).from(trades).where(where).get(),
+    db.selectDistinct({ symbol: trades.symbol }).from(trades).where(eq(trades.portfolioId, portfolioId)).orderBy(trades.symbol).all(),
+  ]);
+  const total = Number(countRow?.count ?? 0);
+  const pageCount = Math.ceil(total / pageSize);
+  const page = Math.min(Math.max(1, requestedPage), Math.max(1, pageCount));
+  const tradeRows = total
+    ? await db.select().from(trades).where(where).orderBy(desc(trades.timestamp), desc(trades.id)).limit(pageSize).offset((page - 1) * pageSize).all()
+    : [];
+  return { trades: tradeRows as PortfolioTrade[], tickers: tickerRows.map((row) => row.symbol), total, page, pageSize, pageCount };
+}
+
 export async function listCashTransactions(portfolioId: number): Promise<PortfolioCashTransaction[]> {
   await ensureDatabase();
   return db.select().from(cashTransactions).where(eq(cashTransactions.portfolioId, portfolioId)).orderBy(cashTransactions.timestamp, cashTransactions.id).all() as Promise<PortfolioCashTransaction[]>;
@@ -150,6 +182,29 @@ export async function recordTrade(input: Omit<PortfolioTrade, 'id'>): Promise<Po
   const inserted = await db.insert(trades).values(input).returning().get();
   await db.insert(holdings).values({ portfolioId: input.portfolioId, symbol: input.symbol, addedAt: input.timestamp }).onConflictDoNothing().run();
   return inserted as PortfolioTrade;
+}
+
+export async function deletePortfolioTrade(portfolioId: number, tradeId: number): Promise<PortfolioTrade> {
+  await ensureDatabase();
+  const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
+    .where(and(eq(portfolios.id, portfolioId), eq(portfolios.userId, 'admin'))).get();
+  if (!portfolio) throw new Error('Portfolio not found.');
+  const trade = await db.select().from(trades)
+    .where(and(eq(trades.portfolioId, portfolioId), eq(trades.id, tradeId))).get();
+  if (!trade) throw new Error('Trade not found.');
+
+  const remainingTrades = await db.select().from(trades)
+    .where(and(eq(trades.portfolioId, portfolioId), eq(trades.symbol, trade.symbol))).all();
+  let quantity = 0;
+  for (const remaining of remainingTrades.filter((row) => row.id !== tradeId).sort((left, right) => left.timestamp - right.timestamp || left.id - right.id)) {
+    quantity += remaining.side === 'BUY' ? remaining.quantity : -remaining.quantity;
+    if (quantity < -1e-8) throw new Error('Cannot delete this trade because a later sell would exceed the remaining position. Delete or correct the dependent sell first.');
+  }
+
+  await db.delete(trades).where(and(eq(trades.portfolioId, portfolioId), eq(trades.id, tradeId))).run();
+  await db.delete(holdingPerformance).where(eq(holdingPerformance.portfolioId, portfolioId)).run();
+  await db.delete(portfolioPerformance).where(eq(portfolioPerformance.portfolioId, portfolioId)).run();
+  return trade as PortfolioTrade;
 }
 
 export async function removeHolding(portfolioId: number, symbol: string): Promise<void> {
@@ -191,7 +246,7 @@ export async function savePerformanceSnapshots(portfolioId: number, snapshots: P
     const batch = snapshots.holdings.slice(index, index + 100).map((point: HoldingPerformancePoint) => ({ portfolioId, ...point }));
     await db.insert(holdingPerformance).values(batch).onConflictDoUpdate({
       target: [holdingPerformance.portfolioId, holdingPerformance.symbol, holdingPerformance.timestamp],
-      set: { quantity: sql`excluded.quantity`, marketPrice: sql`excluded.market_price`, marketValue: sql`excluded.market_value`, profitLoss: sql`excluded.profit_loss` },
+      set: { quantity: sql`excluded.quantity`, marketPrice: sql`excluded.market_price`, averageUnitPrice: sql`excluded.average_unit_price`, marketValue: sql`excluded.market_value`, profitLoss: sql`excluded.profit_loss` },
     }).run();
   }
   for (let index = 0; index < snapshots.portfolio.length; index += 100) {
@@ -205,10 +260,11 @@ export async function savePerformanceSnapshots(portfolioId: number, snapshots: P
 
 export async function listPerformance(portfolioId: number): Promise<PerformanceSnapshots> {
   await ensureDatabase();
-  const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
+  const holdingCutoff = Date.now() - 365 * 24 * 60 * 60_000;
+  const portfolioCutoff = Date.now() - 365 * 24 * 60 * 60_000;
   const [holdingRows, portfolioRows] = await Promise.all([
-    db.select().from(holdingPerformance).where(and(eq(holdingPerformance.portfolioId, portfolioId), sql`${holdingPerformance.timestamp} >= ${cutoff}`)).orderBy(holdingPerformance.timestamp).all(),
-    db.select().from(portfolioPerformance).where(and(eq(portfolioPerformance.portfolioId, portfolioId), sql`${portfolioPerformance.timestamp} >= ${cutoff}`)).orderBy(portfolioPerformance.timestamp).all(),
+    db.select().from(holdingPerformance).where(and(eq(holdingPerformance.portfolioId, portfolioId), sql`${holdingPerformance.timestamp} >= ${holdingCutoff}`)).orderBy(holdingPerformance.timestamp).all(),
+    db.select().from(portfolioPerformance).where(and(eq(portfolioPerformance.portfolioId, portfolioId), sql`${portfolioPerformance.timestamp} >= ${portfolioCutoff}`)).orderBy(portfolioPerformance.timestamp).all(),
   ]);
   return { holdings: holdingRows as HoldingPerformancePoint[], portfolio: portfolioRows as PortfolioPerformancePoint[] };
 }

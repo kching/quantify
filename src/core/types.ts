@@ -68,6 +68,7 @@ export interface HoldingPerformancePoint {
   timestamp: number;
   quantity: number;
   marketPrice: number;
+  averageUnitPrice: number;
   marketValue: number;
   profitLoss: number;
 }

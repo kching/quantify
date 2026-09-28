@@ -42,6 +42,7 @@ let scanPayload: { signals: Array<{ daily: SignalResult[]; hourly: SignalResult[
 let alerts: Array<SignalResult & { id: number; portfolioId: number }>;
 let scanStatus = 200;
 let backtestStatus = 200;
+let omitTradeTickers = false;
 let confirmMock: ReturnType<typeof mock>;
 const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = new URL(String(input), 'http://localhost');
@@ -59,7 +60,14 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
     return Response.json({ ok: true });
   }
   const portfolioIdMatch = url.pathname.match(/^\/api\/portfolios\/(\d+)\/(trades|performance|cash)$/);
-  if (portfolioIdMatch?.[2] === 'trades' && method === 'GET') return Response.json({ trades });
+  if (portfolioIdMatch?.[2] === 'trades' && method === 'GET') {
+    const symbol = url.searchParams.get('symbol');
+    const matches = trades.filter((trade) => !symbol || trade.symbol === symbol).sort((left, right) => right.timestamp - left.timestamp || right.id - left.id);
+    const pageSize = 6;
+    const pageCount = Math.ceil(matches.length / pageSize);
+    const page = Math.min(Number(url.searchParams.get('page') ?? '1'), Math.max(pageCount, 1));
+    return Response.json({ trades: matches.slice((page - 1) * pageSize, page * pageSize), ...(omitTradeTickers ? {} : { tickers: [...new Set(trades.map((trade) => trade.symbol))].sort() }), total: matches.length, page, pageSize, pageCount });
+  }
   if (portfolioIdMatch?.[2] === 'trades' && method === 'POST') {
     const symbolInput = body.symbol.toUpperCase();
     const symbol = symbolInput.includes('.') ? symbolInput : `${symbolInput}.AX`;
@@ -78,6 +86,11 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
     const transaction = { id: cashTransactions.length + 1, portfolioId: Number(portfolioIdMatch[1]), type: body.type as 'DEPOSIT' | 'WITHDRAWAL', amount: Number(body.amount), timestamp: Number(body.timestamp), note: String(body.note ?? '') };
     cashTransactions.push(transaction);
     return Response.json({ transaction }, { status: 201 });
+  }
+  const tradeDeleteMatch = url.pathname.match(/^\/api\/portfolios\/(\d+)\/trades\/(\d+)$/);
+  if (tradeDeleteMatch && method === 'DELETE') {
+    trades = trades.filter((trade) => trade.id !== Number(tradeDeleteMatch[2]));
+    return Response.json({ ok: true });
   }
   const holdingMatch = url.pathname.match(/^\/api\/portfolios\/(\d+)\/holdings$/);
   if (holdingMatch && method === 'POST') {
@@ -109,25 +122,35 @@ beforeEach(() => {
   portfolios = structuredClone([initialPortfolio]);
   trades = [];
   cashTransactions = [];
+  const now = Date.now();
+  const performancePoint = (timestamp: number, profitLoss: number) => ({ timestamp, cashBalance: 100, marketValue: 10_000 + profitLoss, totalValue: 10_100 + profitLoss, contributedCapital: 10_100, profitLoss });
   performance = {
     holdings: [
-      { symbol: 'MQG.AX', timestamp: 1, quantity: 2, marketPrice: 100, marketValue: 200, profitLoss: 10 },
-      { symbol: 'MQG.AX', timestamp: 2, quantity: 2, marketPrice: 105, marketValue: 210, profitLoss: 20 },
-      { symbol: 'XRO.AX', timestamp: 1, quantity: 1, marketPrice: 90, marketValue: 90, profitLoss: -8 },
-      { symbol: 'XRO.AX', timestamp: 2, quantity: 1, marketPrice: 92, marketValue: 92, profitLoss: -6 },
+      { symbol: 'MQG.AX', timestamp: now - 180 * 86_400_000, quantity: 2, marketPrice: 95, averageUnitPrice: 95, marketValue: 190, profitLoss: 0 },
+      { symbol: 'MQG.AX', timestamp: now - 400 * 86_400_000, quantity: 2, marketPrice: 90, averageUnitPrice: 95, marketValue: 180, profitLoss: -10 },
+      { symbol: 'MQG.AX', timestamp: now - 25 * 86_400_000, quantity: 2, marketPrice: 100, averageUnitPrice: 95, marketValue: 200, profitLoss: 10 },
+      { symbol: 'MQG.AX', timestamp: now - 5 * 86_400_000, quantity: 2, marketPrice: 103, averageUnitPrice: 95, marketValue: 206, profitLoss: 15 },
+      { symbol: 'MQG.AX', timestamp: now, quantity: 2, marketPrice: 105, averageUnitPrice: 95, marketValue: 210, profitLoss: 20 },
+      { symbol: 'XRO.AX', timestamp: now - 25 * 86_400_000, quantity: 1, marketPrice: 90, averageUnitPrice: 98, marketValue: 90, profitLoss: -8 },
+      { symbol: 'XRO.AX', timestamp: now - 5 * 86_400_000, quantity: 1, marketPrice: 91, averageUnitPrice: 98, marketValue: 91, profitLoss: -7 },
+      { symbol: 'XRO.AX', timestamp: now, quantity: 1, marketPrice: 92, averageUnitPrice: 98, marketValue: 92, profitLoss: -6 },
     ],
-    portfolio: [{ timestamp: 1, cashBalance: -190, marketValue: 200, totalValue: 10, contributedCapital: 0, profitLoss: 10 }, { timestamp: 2, cashBalance: -190, marketValue: 210, totalValue: 20, contributedCapital: 0, profitLoss: 20 }],
+    portfolio: [performancePoint(now - 400 * 86_400_000, -30), performancePoint(now - 180 * 86_400_000, -20), performancePoint(now - 60 * 86_400_000, 5), performancePoint(now - 25 * 86_400_000, 10), performancePoint(now - 5 * 86_400_000, 15), performancePoint(now, 20)],
   };
   scanPayload = {
-    signals: [{ daily: [buySignal, rsiSignal], hourly: [{ ...buySignal, signal: 'HOLD' }], dailyCandles: [], hourlyCandles: [
-      { symbol: 'MQG.AX', timestamp: 1, open: 198, high: 202, low: 197, close: 200, volume: 10_000 },
-      { symbol: 'MQG.AX', timestamp: 2, open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
+    signals: [{ daily: [buySignal, rsiSignal], hourly: [{ ...buySignal, signal: 'HOLD' }], dailyCandles: [
+      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 1), open: 190, high: 202, low: 188, close: 200, volume: 100_000 },
+      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 2), open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
+    ], hourlyCandles: [
+      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 2, 1), open: 198, high: 202, low: 197, close: 200, volume: 10_000 },
+      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 2, 2), open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
     ] }],
     warnings: [],
   };
   alerts = [{ ...buySignal, id: 10, portfolioId: 1 }];
   scanStatus = 200;
   backtestStatus = 200;
+  omitTradeTickers = false;
   fetchMock.mockClear();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
   confirmMock = mock(() => true);
@@ -146,7 +169,7 @@ afterAll(() => {
 });
 
 describe('Dashboard', () => {
-  it('loads portfolios, scans the selected watchlist and displays daily/hourly context and alerts', async () => {
+  it('loads portfolios, scans the selected watchlist and displays daily signals, day change and alerts', async () => {
     render(<Dashboard />);
 
     expect(await screen.findByRole('option', { name: 'My watchlist' })).toBeDefined();
@@ -155,6 +178,8 @@ describe('Dashboard', () => {
     expect(screen.getByText('RSI 52')).toBeDefined();
     expect(screen.getAllByText('BUY')).toHaveLength(2);
     expect(screen.getByText('$204.00')).toBeDefined();
+    expect(screen.getByRole('columnheader', { name: 'DAILY CHANGE' })).toBeDefined();
+    expect(await screen.findByLabelText('Day change +$4.00 (+2.00%)')).toBeDefined();
     expect(screen.getByText('1 RECORDED')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith('/api/alerts?portfolioId=1');
     await waitForScanCompletion();
@@ -169,7 +194,8 @@ describe('Dashboard', () => {
     expect(await screen.findByText('Create a portfolio to begin your market scan.')).toBeDefined();
     expect(screen.getByText('Add assets to see hourly price context.')).toBeDefined();
     expect(screen.queryByRole('textbox', { name: 'ASX ticker' })).toBeNull();
-    expect(screen.getByRole('textbox', { name: 'New portfolio name' })).toBeDefined();
+    expect(screen.getByRole('option', { name: '＋ New portfolio…' })).toBeDefined();
+    expect(screen.queryByRole('textbox', { name: 'New portfolio name' })).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/scan'))).toBe(false);
   });
 
@@ -177,14 +203,29 @@ describe('Dashboard', () => {
     render(<Dashboard />);
     await screen.findByRole('option', { name: 'My watchlist' });
 
+    fireEvent.change(screen.getByRole('combobox', { name: 'PORTFOLIO' }), { target: { value: 'new' } });
+    expect(await screen.findByRole('dialog', { name: 'Create a portfolio' })).toBeDefined();
     fireEvent.change(screen.getByRole('textbox', { name: 'New portfolio name' }), { target: { value: 'Long term' } });
-    fireEvent.click(screen.getByRole('button', { name: '＋ New portfolio' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create portfolio' }));
 
     await waitFor(() => expect((screen.getByRole('combobox', { name: 'PORTFOLIO' }) as HTMLSelectElement).value).toBe('2'));
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios', expect.objectContaining({ method: 'POST' }));
     expect(await screen.findByRole('option', { name: 'Long term' })).toBeDefined();
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(await screen.findByText('Add tickers above to start monitoring this portfolio.')).toBeDefined();
     await waitForScanCompletion();
+  });
+
+  it('closes the new portfolio dialog without creating anything', async () => {
+    render(<Dashboard />);
+    await screen.findByRole('option', { name: 'My watchlist' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'PORTFOLIO' }), { target: { value: 'new' } });
+    expect(await screen.findByRole('dialog', { name: 'Create a portfolio' })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/portfolios', expect.objectContaining({ method: 'POST' }));
   });
 
   it('adds and removes a ticker from the selected watchlist', async () => {
@@ -207,6 +248,7 @@ describe('Dashboard', () => {
     render(<Dashboard />);
     await screen.findByRole('option', { name: 'My watchlist' });
     await screen.findByTitle('Remove MQG.AX');
+    expect(screen.getByLabelText('Trade date and time').getAttribute('lang')).toBe('en-GB');
 
     fireEvent.change(screen.getByLabelText('Trade ticker'), { target: { value: 'csl' } });
     fireEvent.change(screen.getByRole('combobox', { name: 'Trade side' }), { target: { value: 'BUY' } });
@@ -223,9 +265,55 @@ describe('Dashboard', () => {
     await waitForScanCompletion();
   });
 
+  it('paginates recent trades six at a time and filters them by ticker', async () => {
+    const baseTime = Date.now() - 100_000;
+    trades = Array.from({ length: 13 }, (_, index) => ({
+      id: index + 1, portfolioId: 1, symbol: index < 8 ? 'MQG.AX' : 'XRO.AX', side: 'BUY' as const,
+      quantity: index + 1, price: 100 + index, brokerage: 5, timestamp: baseTime + index * 1_000,
+    }));
+    render(<Dashboard />);
+    await screen.findByRole('option', { name: 'My watchlist' });
+    await screen.findByText('Page 1 of 3');
+    const history = document.querySelector('.trade-panel .trade-history') as HTMLElement;
+    expect(history.querySelectorAll('.trade-row')).toHaveLength(6);
+    expect(screen.getByText('1–6 of 13')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next trade page' }));
+    await screen.findByText('Page 2 of 3');
+    expect(screen.getByText('7–12 of 13')).toBeDefined();
+    expect(history.querySelectorAll('.trade-row')).toHaveLength(6);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter trades by ticker' }), { target: { value: 'MQG.AX' } });
+    await screen.findByText('Page 1 of 2');
+    expect(screen.getByText('1–6 of 8')).toBeDefined();
+    expect(history.querySelectorAll('.trade-row')).toHaveLength(6);
+    expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/trades?page=1&symbol=MQG.AX');
+    await waitForScanCompletion();
+  });
+
+  it('keeps the trade filter usable when a trade response omits ticker options', async () => {
+    omitTradeTickers = true;
+    render(<Dashboard />);
+
+    await screen.findByRole('option', { name: 'All tickers' });
+    expect(screen.getByRole('combobox', { name: 'Filter trades by ticker' })).toBeDefined();
+  });
+
+  it('confirms and deletes a trade from the ledger', async () => {
+    trades = [{ id: 42, portfolioId: 1, symbol: 'MQG.AX', side: 'BUY', quantity: 2, price: 100, brokerage: 5, timestamp: Date.now() - 1_000 }];
+    render(<Dashboard />);
+    await screen.findByText('2 @ $100.00');
+    fireEvent.click(screen.getByRole('button', { name: /Delete MQG\.AX BUY trade/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/trades/42', { method: 'DELETE' }));
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining('Delete trade BUY 2 MQG.AX @ $100.00?'));
+    await waitFor(() => expect(screen.queryByText('2 @ $100.00')).toBeNull());
+  });
+
   it('records cash deposits and withdrawals in the portfolio cash ledger', async () => {
     render(<Dashboard />);
     await screen.findByRole('option', { name: 'My watchlist' });
+    expect(screen.getByLabelText('Cash date and time').getAttribute('lang')).toBe('en-GB');
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Cash entry type' }), { target: { value: 'DEPOSIT' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Cash amount' }), { target: { value: '5000' } });
@@ -242,12 +330,27 @@ describe('Dashboard', () => {
     render(<Dashboard />);
     await screen.findByRole('option', { name: 'My watchlist' });
 
-    expect(await screen.findByRole('img', { name: 'Hourly portfolio profit and loss' })).toBeDefined();
+    expect(await screen.findByRole('img', { name: 'Hourly portfolio profit and loss, Last 1m' })).toBeDefined();
     expect(screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' })).toBeDefined();
     expect(screen.getByRole('img', { name: 'XRO.AX hourly profit and loss' })).toBeDefined();
     expect(screen.getAllByText('$20.00').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText('2 units')).toBeDefined();
+    expect(screen.getByText('2', { exact: true })).toBeDefined();
+    expect(screen.getByText('AVG COST / UNIT')).toBeDefined();
+    expect(screen.getByText('$95.00')).toBeDefined();
     expect(screen.getByText('HOLDING PERFORMANCE')).toBeDefined();
+    const initialChart = screen.getByRole('img', { name: 'Hourly portfolio profit and loss, Last 1m' });
+    const initialCoordinates = initialChart.querySelector('polyline')?.getAttribute('points');
+    const initialHoldingCoordinates = screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' }).querySelector('polyline')?.getAttribute('points');
+    expect(screen.getByRole('button', { name: 'Last 1m' }).getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last 1w' }));
+    const weekChart = screen.getByRole('img', { name: 'Hourly portfolio profit and loss, Last 1w' });
+    expect(weekChart.querySelector('polyline')?.getAttribute('points')).not.toBe(initialCoordinates);
+    expect(screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' }).querySelector('polyline')?.getAttribute('points')).not.toBe(initialHoldingCoordinates);
+    expect(screen.getByRole('button', { name: 'Last 1w' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Last 1y' }));
+    expect(screen.getByRole('img', { name: 'Hourly portfolio profit and loss, Last 1y' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' }).querySelector('polyline')?.getAttribute('points')).not.toBe(initialHoldingCoordinates);
     await waitForScanCompletion();
   });
 

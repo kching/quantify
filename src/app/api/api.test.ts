@@ -39,11 +39,25 @@ const getCandles = mock(async (symbol: string) => candles.filter((candle) => can
 const saveCandles = mock(async (_interval: string, rows: readonly Candle[]) => { candles = [...candles, ...rows]; });
 const listAlerts = mock(async () => alerts);
 const listTrades = mock(async () => recordedTrades);
+const listTradePage = mock(async (portfolioId: number, page: number, symbol?: string) => {
+  const matches = recordedTrades.filter((trade) => trade.portfolioId === portfolioId && (!symbol || trade.symbol === symbol));
+  const ordered = [...matches].sort((left, right) => Number(right.timestamp) - Number(left.timestamp) || Number(right.id) - Number(left.id));
+  const pageSize = 6;
+  const pageCount = Math.ceil(matches.length / pageSize);
+  const safePage = Math.min(page, Math.max(pageCount, 1));
+  return { trades: ordered.slice((safePage - 1) * pageSize, safePage * pageSize), tickers: [...new Set(recordedTrades.map((trade) => String(trade.symbol)))].sort(), total: matches.length, page: safePage, pageSize, pageCount };
+});
 const recordTrade = mock(async (trade: Record<string, unknown>) => {
   const created = { id: recordedTrades.length + 1, ...trade };
   recordedTrades.push(created);
   return created;
 });
+const deletePortfolioTrade = mock(async (portfolioId: number, tradeId: number) => {
+  const index = recordedTrades.findIndex((trade) => trade.portfolioId === portfolioId && trade.id === tradeId);
+  if (index < 0) throw new Error('Trade not found.');
+  return recordedTrades.splice(index, 1)[0];
+});
+const capturePortfolioPerformance = mock(async () => undefined);
 const listCashTransactions = mock(async () => recordedCashTransactions);
 const recordCashTransaction = mock(async (transaction: Record<string, unknown>) => {
   const created = { id: recordedCashTransactions.length + 1, ...transaction };
@@ -59,10 +73,11 @@ const fetchYahooCandles = mock(async () => [] as Candle[]);
 
 mock.module('@/core/db', () => ({
   listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding,
-  getCandles, saveCandles, listAlerts, listTrades, recordTrade, listPerformance,
+  getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, listPerformance,
   listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction,
 }));
 mock.module('@/core/market', () => ({ scanPortfolio }));
+mock.module('@/core/performance.service', () => ({ capturePortfolioPerformance }));
 mock.module('@/core/backtest', () => ({ runBacktest }));
 mock.module('@/core/engine', () => ({
   strategies: [{ id: 'klinger-oscillator', name: 'Klinger', analyze: () => ({}) }],
@@ -78,6 +93,7 @@ const backtestRoute = await import('./backtest/route');
 const tradesRoute = await import('./portfolios/[id]/trades/route');
 const performanceRoute = await import('./portfolios/[id]/performance/route');
 const cashRoute = await import('./portfolios/[id]/cash/route');
+const tradeItemRoute = await import('./portfolios/[id]/trades/[tradeId]/route');
 
 function request(url: string, method = 'GET', body?: unknown): Request {
   return new Request(`http://localhost${url}`, {
@@ -101,7 +117,7 @@ describe('API route handlers', () => {
     candles = [];
     recordedTrades = [];
     recordedCashTransactions = [];
-    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, listTrades, recordTrade, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
+    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, capturePortfolioPerformance, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
   });
 
   describe('/api/portfolios', () => {
@@ -169,8 +185,24 @@ describe('API route handlers', () => {
     it('lists ledger entries for an existing portfolio', async () => {
       const response = await tradesRoute.GET(request('/api/portfolios/1/trades'), context('1'));
       expect(response.status).toBe(200);
-      expect(await payload(response)).toEqual({ trades: [] });
+      expect(await payload(response)).toEqual({ trades: [], tickers: [], total: 0, page: 1, pageSize: 6, pageCount: 0 });
       expect((await tradesRoute.GET(request('/api/portfolios/no/trades'), context('no'))).status).toBe(400);
+    });
+
+    it('filters and paginates trade requests at six entries per page', async () => {
+      recordedTrades = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, portfolioId: 1, symbol: index < 3 ? 'MQG.AX' : 'XRO.AX', timestamp: index + 1 }));
+      const response = await tradesRoute.GET(request('/api/portfolios/1/trades?page=2&symbol=xro'), context('1'));
+      expect(response.status).toBe(200);
+      expect(await payload(response)).toEqual({ trades: [
+        { id: 8, portfolioId: 1, symbol: 'XRO.AX', timestamp: 8 },
+        { id: 7, portfolioId: 1, symbol: 'XRO.AX', timestamp: 7 },
+        { id: 6, portfolioId: 1, symbol: 'XRO.AX', timestamp: 6 },
+        { id: 5, portfolioId: 1, symbol: 'XRO.AX', timestamp: 5 },
+        { id: 4, portfolioId: 1, symbol: 'XRO.AX', timestamp: 4 },
+      ], tickers: ['MQG.AX', 'XRO.AX'], total: 5, page: 1, pageSize: 6, pageCount: 1 });
+      expect(listTradePage).toHaveBeenCalledWith(1, 2, 'XRO.AX');
+      expect((await tradesRoute.GET(request('/api/portfolios/1/trades?page=0'), context('1'))).status).toBe(400);
+      expect((await tradesRoute.GET(request('/api/portfolios/1/trades?symbol=invalid%20ticker'), context('1'))).status).toBe(400);
     });
 
     it('validates a trade and normalizes ASX tickers', async () => {
@@ -186,6 +218,16 @@ describe('API route handlers', () => {
       expect(response.status).toBe(422);
       expect((await payload(response)).error).toBe('Sell quantity exceeds the units currently held.');
     });
+  });
+
+  it('/api/portfolios/[id]/trades/[tradeId] deletes a trade and rebuilds performance', async () => {
+    recordedTrades = [{ id: 7, portfolioId: 1, symbol: 'MQG.AX', side: 'BUY' }];
+    const response = await tradeItemRoute.DELETE(request('/api/portfolios/1/trades/7', 'DELETE'), { params: Promise.resolve({ id: '1', tradeId: '7' }) });
+    expect(response.status).toBe(200);
+    expect((await payload(response)).ok).toBe(true);
+    expect(deletePortfolioTrade).toHaveBeenCalledWith(1, 7);
+    expect(capturePortfolioPerformance).toHaveBeenCalledWith(1);
+    expect((await tradeItemRoute.DELETE(request('/api/portfolios/x/trades/7', 'DELETE'), { params: Promise.resolve({ id: 'x', tradeId: '7' }) })).status).toBe(400);
   });
 
   it('returns portfolio performance and validates its portfolio id', async () => {

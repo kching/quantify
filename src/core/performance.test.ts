@@ -22,10 +22,10 @@ describe('calculatePerformanceSnapshots', () => {
     ]));
 
     expect(result.holdings.filter((point) => point.symbol === 'AAA.AX')).toEqual([
-      { symbol: 'AAA.AX', timestamp: HOUR, quantity: 10, marketPrice: 100, marketValue: 1_000, profitLoss: -5 },
-      { symbol: 'AAA.AX', timestamp: 2 * HOUR, quantity: 10, marketPrice: 110, marketValue: 1_100, profitLoss: 95 },
-      { symbol: 'AAA.AX', timestamp: 3 * HOUR, quantity: 6, marketPrice: 120, marketValue: 720, profitLoss: 190 },
-      { symbol: 'AAA.AX', timestamp: 4 * HOUR, quantity: 6, marketPrice: 115, marketValue: 690, profitLoss: 160 },
+      { symbol: 'AAA.AX', timestamp: HOUR, quantity: 10, marketPrice: 100, averageUnitPrice: 100.5, marketValue: 1_000, profitLoss: -5 },
+      { symbol: 'AAA.AX', timestamp: 2 * HOUR, quantity: 10, marketPrice: 110, averageUnitPrice: 100.5, marketValue: 1_100, profitLoss: 95 },
+      { symbol: 'AAA.AX', timestamp: 3 * HOUR, quantity: 6, marketPrice: 120, averageUnitPrice: 100.5, marketValue: 720, profitLoss: 190 },
+      { symbol: 'AAA.AX', timestamp: 4 * HOUR, quantity: 6, marketPrice: 115, averageUnitPrice: 100.5, marketValue: 690, profitLoss: 160 },
     ]);
     expect(result.portfolio.map((point) => point.profitLoss)).toEqual([-5, 93, 198, 178]);
   });
