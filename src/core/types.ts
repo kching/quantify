@@ -1,5 +1,6 @@
 export type SignalType = 'BUY' | 'SELL' | 'HOLD';
 export type CandleInterval = '1h' | '1d';
+export type TradeSide = 'BUY' | 'SELL';
 
 export interface Candle {
   symbol: string;
@@ -38,6 +39,51 @@ export interface Portfolio {
 export interface PortfolioHolding {
   symbol: string;
   addedAt: number;
+}
+
+export interface PortfolioTrade {
+  id: number;
+  portfolioId: number;
+  symbol: string;
+  side: TradeSide;
+  quantity: number;
+  price: number;
+  brokerage: number;
+  timestamp: number;
+}
+
+export type CashTransactionType = 'DEPOSIT' | 'WITHDRAWAL';
+
+export interface PortfolioCashTransaction {
+  id: number;
+  portfolioId: number;
+  type: CashTransactionType;
+  amount: number;
+  timestamp: number;
+  note: string;
+}
+
+export interface HoldingPerformancePoint {
+  symbol: string;
+  timestamp: number;
+  quantity: number;
+  marketPrice: number;
+  marketValue: number;
+  profitLoss: number;
+}
+
+export interface PortfolioPerformancePoint {
+  timestamp: number;
+  cashBalance: number;
+  marketValue: number;
+  totalValue: number;
+  contributedCapital: number;
+  profitLoss: number;
+}
+
+export interface PerformanceSnapshots {
+  holdings: HoldingPerformancePoint[];
+  portfolio: PortfolioPerformancePoint[];
 }
 
 export interface BacktestTrade {

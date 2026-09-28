@@ -1,5 +1,6 @@
 import { analyzeSymbol } from './engine';
-import { getCandles, listPortfolios, recordAlert, saveCandles } from './db';
+import { getCandles, listPortfolioTradeSymbols, listPortfolios, recordAlert, saveCandles } from './db';
+import { capturePortfolioPerformance } from './performance.service';
 import { fetchYahooCandles } from './providers/yahoo.provider';
 import type { Candle, CandleInterval } from './types';
 
@@ -59,11 +60,14 @@ export async function scanPortfolio(portfolioId: number): Promise<{ signals: Arr
   const portfolio = (await listPortfolios()).find((item) => item.id === portfolioId);
   if (!portfolio) throw new Error('Portfolio not found.');
   const warnings: string[] = [];
-  const signals = await Promise.all(portfolio.holdings.map(async ({ symbol }) => {
+  const tradedSymbols = await listPortfolioTradeSymbols(portfolioId);
+  const symbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);
+  const signals = await Promise.all([...symbols].map(async (symbol) => {
     const result = await scanSymbol(symbol, warnings);
     for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal);
     return { symbol, ...result };
   }));
+  await capturePortfolioPerformance(portfolioId);
   return { signals, warnings };
 }
 
@@ -71,7 +75,9 @@ export async function updateAllPortfolioMarkets(): Promise<{ portfolioCount: num
   const portfolios = await listPortfolios();
   const ownersBySymbol = new Map<string, number[]>();
   for (const portfolio of portfolios) {
-    for (const { symbol } of portfolio.holdings) {
+    const tradedSymbols = await listPortfolioTradeSymbols(portfolio.id);
+    const symbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);
+    for (const symbol of symbols) {
       const owners = ownersBySymbol.get(symbol) ?? [];
       owners.push(portfolio.id);
       ownersBySymbol.set(symbol, owners);
@@ -84,5 +90,6 @@ export async function updateAllPortfolioMarkets(): Promise<{ portfolioCount: num
       for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal);
     }
   }));
+  await Promise.all(portfolios.map(({ id }) => capturePortfolioPerformance(id)));
   return { portfolioCount: portfolios.length, symbolCount: ownersBySymbol.size, warnings };
 }

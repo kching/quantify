@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import type { Candle, CandleInterval, Portfolio, PortfolioHolding } from './types';
+import type { Candle, CandleInterval, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade } from './types';
 
 const users = sqliteTable('users', { id: text('id').primaryKey(), name: text('name').notNull() });
 const portfolios = sqliteTable('portfolios', {
@@ -26,11 +26,30 @@ const alerts = sqliteTable('alerts', {
   strategyId: text('strategy_id').notNull(), signal: text('signal').notNull(), timestamp: integer('timestamp').notNull(),
   price: real('price').notNull(), rationale: text('rationale').notNull(), indicators: text('indicators').notNull(),
 }, (table) => [uniqueIndex('alerts_once_per_candle').on(table.portfolioId, table.symbol, table.strategyId, table.signal, table.timestamp)]);
+const trades = sqliteTable('trades', {
+  id: integer('id').primaryKey({ autoIncrement: true }), portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }),
+  symbol: text('symbol').notNull(), side: text('side').notNull(), quantity: real('quantity').notNull(), price: real('price').notNull(),
+  brokerage: real('brokerage').notNull(), timestamp: integer('timestamp').notNull(),
+}, (table) => [index('trades_portfolio_symbol_time').on(table.portfolioId, table.symbol, table.timestamp)]);
+const cashTransactions = sqliteTable('cash_transactions', {
+  id: integer('id').primaryKey({ autoIncrement: true }), portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(), amount: real('amount').notNull(), timestamp: integer('timestamp').notNull(), note: text('note').notNull().default(''),
+}, (table) => [index('cash_transactions_portfolio_time').on(table.portfolioId, table.timestamp)]);
+const holdingPerformance = sqliteTable('holding_performance', {
+  portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }), symbol: text('symbol').notNull(),
+  timestamp: integer('timestamp').notNull(), quantity: real('quantity').notNull(), marketPrice: real('market_price').notNull(),
+  marketValue: real('market_value').notNull(), profitLoss: real('profit_loss').notNull(),
+}, (table) => [uniqueIndex('holding_performance_once_per_candle').on(table.portfolioId, table.symbol, table.timestamp)]);
+const portfolioPerformance = sqliteTable('portfolio_performance', {
+  portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }), timestamp: integer('timestamp').notNull(),
+  cashBalance: real('cash_balance').notNull().default(0), marketValue: real('market_value').notNull(), totalValue: real('total_value').notNull().default(0),
+  contributedCapital: real('contributed_capital').notNull().default(0), profitLoss: real('profit_loss').notNull(),
+}, (table) => [uniqueIndex('portfolio_performance_once_per_candle').on(table.portfolioId, table.timestamp)]);
 
 const dbPath = process.env.QUANTIFY_DB_PATH ?? join(process.cwd(), 'data', 'quantify.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
 const client = createClient({ url: `file:${dbPath}` });
-export const db = drizzle({ client, schema: { users, portfolios, holdings, candles, alerts } });
+export const db = drizzle({ client, schema: { users, portfolios, holdings, candles, alerts, trades, cashTransactions, holdingPerformance, portfolioPerformance } });
 
 async function initializeDatabase(): Promise<void> {
   await client.executeMultiple(`
@@ -42,7 +61,19 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
     CREATE TABLE IF NOT EXISTS candles (symbol TEXT NOT NULL, interval TEXT NOT NULL, timestamp INTEGER NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY(symbol, interval, timestamp));
     CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, strategy_id TEXT NOT NULL, signal TEXT NOT NULL, timestamp INTEGER NOT NULL, price REAL NOT NULL, rationale TEXT NOT NULL, indicators TEXT NOT NULL, UNIQUE(portfolio_id, symbol, strategy_id, signal, timestamp));
+    CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL, price REAL NOT NULL, brokerage REAL NOT NULL, timestamp INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS trades_portfolio_symbol_time ON trades(portfolio_id, symbol, timestamp);
+    CREATE TABLE IF NOT EXISTS cash_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, type TEXT NOT NULL CHECK(type IN ('DEPOSIT', 'WITHDRAWAL')), amount REAL NOT NULL CHECK(amount > 0), timestamp INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '');
+    CREATE INDEX IF NOT EXISTS cash_transactions_portfolio_time ON cash_transactions(portfolio_id, timestamp);
+    CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
+    CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
   `);
+  const performanceColumns = await client.execute('PRAGMA table_info(portfolio_performance)');
+  const columnNames = new Set(performanceColumns.rows.map((row) => String(row.name)));
+  if (!columnNames.has('cash_balance')) await client.execute('ALTER TABLE portfolio_performance ADD COLUMN cash_balance REAL NOT NULL DEFAULT 0');
+  if (!columnNames.has('total_value')) await client.execute('ALTER TABLE portfolio_performance ADD COLUMN total_value REAL NOT NULL DEFAULT 0');
+  if (!columnNames.has('contributed_capital')) await client.execute('ALTER TABLE portfolio_performance ADD COLUMN contributed_capital REAL NOT NULL DEFAULT 0');
+  await client.execute('UPDATE portfolio_performance SET total_value = market_value WHERE total_value = 0 AND market_value != 0');
   const adminUser = await db.select({ id: users.id }).from(users).where(eq(users.id, 'admin')).get();
   if (!adminUser) {
     await db.insert(users).values({ id: 'admin', name: 'Admin' }).run();
@@ -82,6 +113,45 @@ export async function addHolding(portfolioId: number, symbol: string): Promise<v
   await db.insert(holdings).values({ portfolioId, symbol, addedAt: Date.now() }).onConflictDoNothing().run();
 }
 
+export async function listTrades(portfolioId: number): Promise<PortfolioTrade[]> {
+  await ensureDatabase();
+  return db.select().from(trades).where(eq(trades.portfolioId, portfolioId)).orderBy(trades.timestamp, trades.id).all() as Promise<PortfolioTrade[]>;
+}
+
+export async function listCashTransactions(portfolioId: number): Promise<PortfolioCashTransaction[]> {
+  await ensureDatabase();
+  return db.select().from(cashTransactions).where(eq(cashTransactions.portfolioId, portfolioId)).orderBy(cashTransactions.timestamp, cashTransactions.id).all() as Promise<PortfolioCashTransaction[]>;
+}
+
+export async function recordCashTransaction(input: Omit<PortfolioCashTransaction, 'id'>): Promise<PortfolioCashTransaction> {
+  await ensureDatabase();
+  const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
+    .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, 'admin'))).get();
+  if (!portfolio) throw new Error('Portfolio not found.');
+  return db.insert(cashTransactions).values(input).returning().get() as Promise<PortfolioCashTransaction>;
+}
+
+export async function recordTrade(input: Omit<PortfolioTrade, 'id'>): Promise<PortfolioTrade> {
+  await ensureDatabase();
+  const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
+    .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, 'admin'))).get();
+  if (!portfolio) throw new Error('Portfolio not found.');
+
+  const previousTrades = await db.select({ id: trades.id, side: trades.side, quantity: trades.quantity, timestamp: trades.timestamp }).from(trades)
+    .where(and(eq(trades.portfolioId, input.portfolioId), eq(trades.symbol, input.symbol))).all();
+  const chronologicalTrades = [...previousTrades, { ...input, id: Number.MAX_SAFE_INTEGER }]
+    .sort((left, right) => left.timestamp - right.timestamp || left.id - right.id);
+  let currentQuantity = 0;
+  for (const trade of chronologicalTrades) {
+    currentQuantity += trade.side === 'BUY' ? trade.quantity : -trade.quantity;
+    if (currentQuantity < -1e-8) throw new Error('Sell quantity exceeds the units held at the selected trade time.');
+  }
+
+  const inserted = await db.insert(trades).values(input).returning().get();
+  await db.insert(holdings).values({ portfolioId: input.portfolioId, symbol: input.symbol, addedAt: input.timestamp }).onConflictDoNothing().run();
+  return inserted as PortfolioTrade;
+}
+
 export async function removeHolding(portfolioId: number, symbol: string): Promise<void> {
   await ensureDatabase();
   await db.delete(holdings).where(sql`${holdings.portfolioId} = ${portfolioId} AND ${holdings.symbol} = ${symbol}`).run();
@@ -113,4 +183,38 @@ export async function listAlerts(portfolioId?: number): Promise<Array<Record<str
     ? await db.select().from(alerts).where(sql`${alerts.userId} = 'admin' AND ${alerts.portfolioId} = ${portfolioId}`).orderBy(desc(alerts.timestamp)).limit(100).all()
     : await db.select().from(alerts).where(eq(alerts.userId, 'admin')).orderBy(desc(alerts.timestamp)).limit(100).all();
   return rows.map((row) => ({ ...row, indicators: JSON.parse(row.indicators) as Record<string, number> }));
+}
+
+export async function savePerformanceSnapshots(portfolioId: number, snapshots: PerformanceSnapshots): Promise<void> {
+  await ensureDatabase();
+  for (let index = 0; index < snapshots.holdings.length; index += 100) {
+    const batch = snapshots.holdings.slice(index, index + 100).map((point: HoldingPerformancePoint) => ({ portfolioId, ...point }));
+    await db.insert(holdingPerformance).values(batch).onConflictDoUpdate({
+      target: [holdingPerformance.portfolioId, holdingPerformance.symbol, holdingPerformance.timestamp],
+      set: { quantity: sql`excluded.quantity`, marketPrice: sql`excluded.market_price`, marketValue: sql`excluded.market_value`, profitLoss: sql`excluded.profit_loss` },
+    }).run();
+  }
+  for (let index = 0; index < snapshots.portfolio.length; index += 100) {
+    const batch = snapshots.portfolio.slice(index, index + 100).map((point: PortfolioPerformancePoint) => ({ portfolioId, ...point }));
+    await db.insert(portfolioPerformance).values(batch).onConflictDoUpdate({
+      target: [portfolioPerformance.portfolioId, portfolioPerformance.timestamp],
+      set: { cashBalance: sql`excluded.cash_balance`, marketValue: sql`excluded.market_value`, totalValue: sql`excluded.total_value`, contributedCapital: sql`excluded.contributed_capital`, profitLoss: sql`excluded.profit_loss` },
+    }).run();
+  }
+}
+
+export async function listPerformance(portfolioId: number): Promise<PerformanceSnapshots> {
+  await ensureDatabase();
+  const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
+  const [holdingRows, portfolioRows] = await Promise.all([
+    db.select().from(holdingPerformance).where(and(eq(holdingPerformance.portfolioId, portfolioId), sql`${holdingPerformance.timestamp} >= ${cutoff}`)).orderBy(holdingPerformance.timestamp).all(),
+    db.select().from(portfolioPerformance).where(and(eq(portfolioPerformance.portfolioId, portfolioId), sql`${portfolioPerformance.timestamp} >= ${cutoff}`)).orderBy(portfolioPerformance.timestamp).all(),
+  ]);
+  return { holdings: holdingRows as HoldingPerformancePoint[], portfolio: portfolioRows as PortfolioPerformancePoint[] };
+}
+
+export async function listPortfolioTradeSymbols(portfolioId: number): Promise<string[]> {
+  await ensureDatabase();
+  const rows = await db.selectDistinct({ symbol: trades.symbol }).from(trades).where(eq(trades.portfolioId, portfolioId)).all();
+  return rows.map((row) => row.symbol);
 }

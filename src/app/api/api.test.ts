@@ -13,6 +13,8 @@ const seededPortfolios = [
 let portfolios = structuredClone(seededPortfolios);
 let alerts: Array<Record<string, unknown>> = [];
 let candles: Candle[] = [];
+let recordedTrades: Array<Record<string, unknown>> = [];
+let recordedCashTransactions: Array<Record<string, unknown>> = [];
 
 const listPortfolios = mock(async () => portfolios);
 const createPortfolio = mock(async (name: string): Promise<Portfolio> => {
@@ -36,13 +38,29 @@ const removeHolding = mock(async (id: number, symbol: string) => {
 const getCandles = mock(async (symbol: string) => candles.filter((candle) => candle.symbol === symbol));
 const saveCandles = mock(async (_interval: string, rows: readonly Candle[]) => { candles = [...candles, ...rows]; });
 const listAlerts = mock(async () => alerts);
+const listTrades = mock(async () => recordedTrades);
+const recordTrade = mock(async (trade: Record<string, unknown>) => {
+  const created = { id: recordedTrades.length + 1, ...trade };
+  recordedTrades.push(created);
+  return created;
+});
+const listCashTransactions = mock(async () => recordedCashTransactions);
+const recordCashTransaction = mock(async (transaction: Record<string, unknown>) => {
+  const created = { id: recordedCashTransactions.length + 1, ...transaction };
+  recordedCashTransactions.push(created);
+  return created;
+});
+const listPerformance = mock(async () => ({ holdings: [], portfolio: [] }));
+const listPortfolioTradeSymbols = mock(async () => [] as string[]);
+const savePerformanceSnapshots = mock(async () => undefined);
 const scanPortfolio = mock(async (portfolioId: number) => ({ portfolioId, scanned: 1 }));
 const runBacktest = mock(() => ({ symbol: 'TEST.AX', strategyId: 'klinger-oscillator', trades: [] }));
 const fetchYahooCandles = mock(async () => [] as Candle[]);
 
 mock.module('@/core/db', () => ({
   listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding,
-  getCandles, saveCandles, listAlerts,
+  getCandles, saveCandles, listAlerts, listTrades, recordTrade, listPerformance,
+  listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction,
 }));
 mock.module('@/core/market', () => ({ scanPortfolio }));
 mock.module('@/core/backtest', () => ({ runBacktest }));
@@ -57,6 +75,9 @@ const holdingsRoute = await import('./portfolios/[id]/holdings/route');
 const alertsRoute = await import('./alerts/route');
 const scanRoute = await import('./scan/route');
 const backtestRoute = await import('./backtest/route');
+const tradesRoute = await import('./portfolios/[id]/trades/route');
+const performanceRoute = await import('./portfolios/[id]/performance/route');
+const cashRoute = await import('./portfolios/[id]/cash/route');
 
 function request(url: string, method = 'GET', body?: unknown): Request {
   return new Request(`http://localhost${url}`, {
@@ -78,7 +99,9 @@ describe('API route handlers', () => {
     portfolios = structuredClone(seededPortfolios);
     alerts = [];
     candles = [];
-    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
+    recordedTrades = [];
+    recordedCashTransactions = [];
+    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, listTrades, recordTrade, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
   });
 
   describe('/api/portfolios', () => {
@@ -140,6 +163,45 @@ describe('API route handlers', () => {
     expect(response.status).toBe(200);
     expect(await payload(response)).toEqual({ alerts: [] });
     expect(listAlerts).toHaveBeenCalledWith(1);
+  });
+
+  describe('/api/portfolios/[id]/trades', () => {
+    it('lists ledger entries for an existing portfolio', async () => {
+      const response = await tradesRoute.GET(request('/api/portfolios/1/trades'), context('1'));
+      expect(response.status).toBe(200);
+      expect(await payload(response)).toEqual({ trades: [] });
+      expect((await tradesRoute.GET(request('/api/portfolios/no/trades'), context('no'))).status).toBe(400);
+    });
+
+    it('validates a trade and normalizes ASX tickers', async () => {
+      expect((await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'MQG', side: 'BUY', quantity: 0, price: 100, brokerage: 5, timestamp: 1 }), context('1'))).status).toBe(400);
+      const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'mqg', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }), context('1'));
+      expect(response.status).toBe(201);
+      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'MQG.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 });
+    });
+
+    it('returns an error when the ledger rejects a sell', async () => {
+      recordTrade.mockRejectedValueOnce(new Error('Sell quantity exceeds the units currently held.'));
+      const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'MQG.AX', side: 'SELL', quantity: 2, price: 100, brokerage: 5, timestamp: 1 }), context('1'));
+      expect(response.status).toBe(422);
+      expect((await payload(response)).error).toBe('Sell quantity exceeds the units currently held.');
+    });
+  });
+
+  it('returns portfolio performance and validates its portfolio id', async () => {
+    expect((await performanceRoute.GET(request('/api/portfolios/1/performance'), context('1'))).status).toBe(200);
+    expect((await performanceRoute.GET(request('/api/portfolios/no/performance'), context('no'))).status).toBe(400);
+  });
+
+  it('/api/portfolios/[id]/cash lists and records valid cash movements', async () => {
+    const getResponse = await cashRoute.GET(request('/api/portfolios/1/cash'), context('1'));
+    expect(getResponse.status).toBe(200);
+    expect((await payload(getResponse)).transactions).toEqual([]);
+
+    expect((await cashRoute.POST(request('/api/portfolios/1/cash', 'POST', { type: 'DEPOSIT', amount: -5, timestamp: 2 }), context('1'))).status).toBe(400);
+    const response = await cashRoute.POST(request('/api/portfolios/1/cash', 'POST', { type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' }), context('1'));
+    expect(response.status).toBe(201);
+    expect(recordCashTransaction).toHaveBeenCalledWith({ portfolioId: 1, type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' });
   });
 
   it('only scans an existing portfolio and returns scan errors as 500', async () => {

@@ -1,0 +1,37 @@
+import { listPortfolios, listTrades, recordTrade } from '@/core/db';
+import type { TradeSide } from '@/core/types';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+  const id = Number((await context.params).id);
+  if (!Number.isSafeInteger(id) || id < 1) return Response.json({ error: 'Invalid portfolio.' }, { status: 400 });
+  if (!(await listPortfolios()).some((portfolio) => portfolio.id === id)) return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
+  return Response.json({ trades: await listTrades(id) });
+}
+
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+  const portfolioId = Number((await context.params).id);
+  const body = await request.json() as { symbol?: unknown; side?: unknown; quantity?: unknown; price?: unknown; brokerage?: unknown; timestamp?: unknown };
+  const symbolInput = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
+  const symbol = symbolInput.includes('.') ? symbolInput : `${symbolInput}.AX`;
+  const side = body.side;
+  const quantity = Number(body.quantity);
+  const price = Number(body.price);
+  const brokerage = Number(body.brokerage);
+  const timestamp = Number(body.timestamp);
+  if (!Number.isSafeInteger(portfolioId) || portfolioId < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)
+    || (side !== 'BUY' && side !== 'SELL') || !Number.isFinite(quantity) || quantity <= 0
+    || !Number.isFinite(price) || price <= 0 || !Number.isFinite(brokerage) || brokerage < 0
+    || !Number.isSafeInteger(timestamp) || timestamp < 1) {
+    return Response.json({ error: 'Enter a valid ticker, side, units, price, brokerage and trade time.' }, { status: 400 });
+  }
+  try {
+    const trade = await recordTrade({ portfolioId, symbol, side: side as TradeSide, quantity, price, brokerage, timestamp });
+    return Response.json({ trade }, { status: 201 });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Unable to record this trade.';
+    const status = message === 'Portfolio not found.' ? 404 : 422;
+    return Response.json({ error: message }, { status });
+  }
+}
