@@ -209,11 +209,7 @@ td:first-child, th:first-child { padding-left: 11px; }
 .price-chart { display: block; width: 100%; height: 39px; }
 .chart-empty { display: grid; min-height: 100px; place-items: center; padding: 18px; color: #8894a5; font-size: 13px; text-align: center; }
 .chart-caption { margin: 9px 0 0; color: #8a96a6; font-size: 11px; }
-.notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 7px; font-size: 13px; line-height: 1.5; }
-.notice > span { min-width: 0; }
-.notice-dismiss { display: grid; flex: 0 0 auto; width: 25px; height: 25px; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: currentColor; opacity: .65; }
-.notice-dismiss:hover { background: #0000000d; opacity: 1; }
-.notice-dismiss svg { width: 15px; height: 15px; }
+.notice { padding: 10px 12px; border-radius: 7px; font-size: 13px; line-height: 1.5; }
 .notice-error { margin-bottom: 13px; border: 1px solid #f2cbd1; background: #fff4f5; color: #a73446; }
 .notice-warning { margin-top: 9px; border: 1px solid #f2e1b8; background: #fffaf0; color: #93691f; }
 .performance-section { margin-top: 15px; }
@@ -248,7 +244,6 @@ td:first-child, th:first-child { padding-left: 11px; }
 .ledger-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 14px; margin-top: 15px; }
 .trade-panel > .section-card-header, .cash-panel > .section-card-header, .alerts-panel > .section-card-header, .backtest-panel > .section-card-header { padding-bottom: 16px; }
 .ledger-grid > .trade-panel > .section-card-header, .ledger-grid > .cash-panel > .section-card-header { min-height: 147px; align-items: flex-start; padding: 16px; }
-.trade-panel > .p-6, .cash-panel > .p-6, .alerts-panel > .p-6, .backtest-panel > .p-6 { padding-top: 0; }
 .trade-form { display: flex; flex-direction: column; gap: 12px; }
 .trade-form-row { display: flex; min-width: 0; align-items: flex-end; gap: 12px; }
 /*.trade-form-row > label { flex: 1; }*/
