@@ -135,6 +135,7 @@ async function waitForScanCompletion(): Promise<void> {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');
   portfolios = structuredClone([initialPortfolio]);
   trades = [];
   cashTransactions = [];
@@ -184,6 +185,35 @@ afterAll(() => {
 });
 
 describe('Dashboard', () => {
+  it('collapses the sidebar to an icon rail and expands it again', async () => {
+    render(<Dashboard />);
+
+    const sidebar = screen.getByRole('complementary');
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Expand sidebar' }).getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('updates the selected navigation item when the URL anchor changes', async () => {
+    render(<Dashboard />);
+
+    await waitForPortfolio();
+    expect(screen.getByRole('link', { name: 'Overview' }).className).toContain('active');
+    expect(screen.getByRole('link', { name: 'P&L performance' }).className).not.toContain('active');
+
+    await act(async () => {
+      window.location.hash = '#performance';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByRole('link', { name: 'P&L performance' }).className).toContain('active');
+    expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('active');
+  });
+
   it('loads portfolios, scans the selected watchlist and displays daily signals, day change and alerts', async () => {
     render(<Dashboard />);
 
@@ -334,11 +364,11 @@ describe('Dashboard', () => {
 
     await chooseOption('Cash entry type', 'Deposit');
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Cash amount' }), { target: { value: '5000' } });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Cash note' }), { target: { value: 'Initial funding' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Save cash entry' }).closest('form') as HTMLFormElement);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/cash', expect.objectContaining({ method: 'POST' })));
-    expect(await screen.findByText('Initial funding')).toBeDefined();
+    expect(await screen.findByText('$5,000.00')).toBeDefined();
+    expect(screen.queryByText('Cash movement')).toBeNull();
     expect(screen.getByText('CASH LEDGER')).toBeDefined();
     await waitForScanCompletion();
   });

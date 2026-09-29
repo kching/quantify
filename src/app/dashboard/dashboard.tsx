@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronRight, CircleHelp, LayoutDashboard, LoaderCircle, RefreshCw, Settings2, Trash2, Wallet } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import PortfolioSignals, { SignalPill } from '@/components/PortfolioSignals';
 import type { PortfolioSignalRow } from '@/components/PortfolioSignals';
 import RecentMovements from '@/components/RecentMovements';
 import PortfolioPerformance, { type PerformanceRange } from '@/components/PortfolioPerformance';
+import AppSidebar from '@/components/AppSidebar';
 
 interface PortfolioWithHoldings extends Portfolio { holdings: PortfolioHolding[] }
 interface ScanPayload { signals: PortfolioSignalRow[]; warnings: string[] }
@@ -79,7 +80,6 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
-
   const loadPortfolios = useCallback(async (selectFirst = false): Promise<void> => {
     const response = await fetch('/api/portfolios');
     const body = await response.json() as { portfolios: PortfolioWithHoldings[] };
@@ -277,6 +277,7 @@ export default function Dashboard() {
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Could not record this cash entry.');
       setCashPage(1);
+      await loadCashPage(1);
       await refresh();
       return true;
     } catch (cause) {
@@ -323,21 +324,17 @@ export default function Dashboard() {
   const latestPortfolioPerformance = performance.portfolio.at(-1);
 
   return <div className="app-shell" id="top">
-    <aside className="app-sidebar">
-      <a className="sidebar-brand" href="#top"><span className="sidebar-logo">Q</span><span>quantify<span>.</span><small>ASX MARKET WORKSPACE</small></span></a>
-      <div className="sidebar-label">WORKSPACE</div>
-      <nav className="sidebar-nav" aria-label="Workspace navigation">
-        <a className="nav-item active" href="#overview"><LayoutDashboard/>Overview</a>
-        <a className="nav-item" href="#portfolio"><BarChart3/>Portfolio signals</a>
-        <a className="nav-item" href="#performance"><Activity/>P&amp;L performance</a>
-        <a className="nav-item" href="#ledger"><Wallet/>Trade &amp; cash ledger</a>
-        <a className="nav-item" href="/research"><Activity/>Strategy research</a>
-      </nav>
-      <div className="sidebar-footer"><div className="sidebar-help"><CircleHelp/><span>Decision support only<br/><small>No orders are sent</small></span></div><div className="sidebar-profile"><span className="profile-avatar">A</span><span><strong>admin</strong><small>Local workspace</small></span><Settings2 className="profile-settings"/></div></div>
-    </aside>
+    <AppSidebar page="dashboard"/>
 
     <main className="app-main">
-      <header className="app-header"><div className="breadcrumb"><span>Workspace</span><ChevronRight/><strong>Overview</strong></div><div className="header-actions"><Badge variant="outline" className="market-badge"><i/>ASX <span>·</span> AUSTRALIA</Badge><span className="header-divider"/><span className="cycle-label">DAILY DECISION CYCLE</span><Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading || !portfolioId}>{loading ? <LoaderCircle className="size-4 animate-spin"/> : <RefreshCw className="size-4"/>}{loading ? 'Scanning…' : 'Refresh data'}</Button></div></header>
+      <header className="app-header">
+        <div/>
+        <div className="header-actions">
+          <Badge variant="outline" className="market-badge"><i/>ASX <span>·</span> AUSTRALIA</Badge>
+          <span className="header-divider"/>
+          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading || !portfolioId}>{loading ? <LoaderCircle className="size-4 animate-spin"/> : <RefreshCw className="size-4"/>}{loading ? 'Scanning…' : 'Refresh data'}</Button>
+        </div>
+      </header>
 
       <div className="dashboard-content">
         <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the ASX, refreshed against your portfolio.</p></div>

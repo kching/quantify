@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Activity, BarChart3, CircleHelp, LayoutDashboard, Wallet } from 'lucide-react';
-import Link from 'next/link';
 import type { BacktestResult } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import StrategyResearch, { type StrategyResearchInput } from '@/components/StrategyResearch';
+import AppSidebar from '@/components/AppSidebar';
 
 export default function ResearchPage(): React.JSX.Element {
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -30,21 +29,10 @@ export default function ResearchPage(): React.JSX.Element {
   }
 
   return <div className="app-shell" id="top">
-    <aside className="app-sidebar">
-      <Link className="sidebar-brand" href="/"><span className="sidebar-logo">Q</span><span>quantify<span>.</span><small>ASX MARKET WORKSPACE</small></span></Link>
-      <div className="sidebar-label">WORKSPACE</div>
-      <nav className="sidebar-nav" aria-label="Workspace navigation">
-        <Link className="nav-item" href="/#overview"><LayoutDashboard/>Overview</Link>
-        <Link className="nav-item" href="/#portfolio"><BarChart3/>Portfolio signals</Link>
-        <Link className="nav-item" href="/#performance"><Activity/>P&amp;L performance</Link>
-        <Link className="nav-item" href="/#ledger"><Wallet/>Trade &amp; cash ledger</Link>
-        <Link className="nav-item active" href="/research"><Activity/>Strategy research</Link>
-      </nav>
-      <div className="sidebar-footer"><div className="sidebar-help"><CircleHelp/><span>Decision support only<br/><small>No orders are sent</small></span></div><div className="sidebar-profile"><span className="profile-avatar">A</span><span><strong>admin</strong><small>Local workspace</small></span></div></div>
-    </aside>
+    <AppSidebar page="research"/>
 
     <main className="app-main">
-      <header className="app-header"><div className="breadcrumb"><Link href="/">Workspace</Link><span>›</span><strong>Research</strong></div><div className="header-actions"><Badge variant="outline" className="market-badge"><i/>ASX <span>·</span> AUSTRALIA</Badge><span className="header-divider"/><span className="cycle-label">STRATEGY LAB</span></div></header>
+      <header className="app-header"><div className="header-actions"><Badge variant="outline" className="market-badge"><i/>ASX <span>·</span> AUSTRALIA</Badge><span className="header-divider"/><span className="cycle-label">STRATEGY LAB</span></div></header>
       <div className="dashboard-content">
         <section className="page-heading"><div><p className="section-kicker">STRATEGY LAB</p><h1>Research strategies</h1><p className="page-subtitle">Test a hypothesis against cached daily market history.</p></div></section>
         {error && <div className="notice notice-error" role="alert">{error}</div>}
