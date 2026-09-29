@@ -296,6 +296,7 @@ describe('Dashboard', () => {
     await waitForPortfolio();
     await screen.findByLabelText('Remove MQG.AX');
     expect(screen.getByLabelText('Trade date and time').getAttribute('lang')).toBe('en-GB');
+    expect((screen.getByLabelText('Trade date and time') as HTMLInputElement).value).not.toBe('');
 
     fireEvent.change(screen.getByLabelText('Trade ticker'), { target: { value: 'csl' } });
     await chooseOption('Trade side', 'Buy');
