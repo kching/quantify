@@ -9,7 +9,7 @@ bun install
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). On first start, Quantify creates an `admin` user, a **My watchlist** portfolio, and the initial tickers `MQG.AX`, `COL.AX`, `XRO.AX`, `VGS.AX`, and `REA.AX`. Add or remove tickers and create or delete portfolios from the dashboard. Tickers without an exchange suffix are treated as ASX symbols and receive `.AX` automatically.
+Open [http://localhost:3000](http://localhost:3000). On first start, Quantify creates an `admin` user, a **My watchlist** portfolio, and the initial tickers `MQG.AX`, `COL.AX`, `XRO.AX`, `VGS.AX`, and `REA.AX`. Add or remove tickers and create or delete portfolios from the dashboard. Tickers are stored exactly as entered, so symbols from other markets such as `QQQ` can be used alongside explicit exchange-qualified symbols such as `MQG.AX`.
 
 The SQLite database is created at `data/quantify.sqlite` and ignored by Git. Set `QUANTIFY_DB_PATH` to choose another local file. Candle and portfolio/holding P&L time-series data are retained for up to 12 months; older points are evicted at startup and once per day. Trade and cash ledgers, along with portfolio positions, are retained so current holdings, cash, and P&L remain correct. When the local Next.js server starts, its engine immediately updates all unique tickers across all portfolios, then repeats hourly without an external scheduler or API caller. Dashboard requests can also refresh a selected portfolio on demand. Both paths reuse recent candles and refresh stale data from Yahoo Finance; hourly data has a 30-minute request cooldown and daily data an eight-hour cooldown. Network failures leave the last cached candles available and are shown in the dashboard or server log.
 

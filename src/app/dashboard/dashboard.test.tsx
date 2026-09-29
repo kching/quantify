@@ -302,12 +302,11 @@ describe('Dashboard', () => {
     await chooseOption('Trade side', 'Buy');
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Trade units' }), { target: { value: '5' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Trade price' }), { target: { value: '120' } });
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Trade brokerage' }), { target: { value: '9.95' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Save trade' }).closest('form') as HTMLFormElement);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/trades', expect.objectContaining({ method: 'POST' })));
     expect(await screen.findByText('5 @ $120.00')).toBeDefined();
-    expect(screen.getByText(/Brokerage \$9\.95/)).toBeDefined();
+    expect(screen.getByText(/Brokerage \$5\.00/)).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/trades', expect.objectContaining({ method: 'POST' }));
     expect(await screen.findByLabelText('Remove CSL.AX')).toBeDefined();
     await waitForScanCompletion();

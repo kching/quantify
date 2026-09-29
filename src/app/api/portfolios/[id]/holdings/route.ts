@@ -8,10 +8,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const id = Number(rawId);
   const body = await request.json() as { symbol?: unknown };
   const symbol = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
-  if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)) return Response.json({ error: 'Enter a valid ticker, such as MQG.AX.' }, { status: 400 });
+  if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)) return Response.json({ error: 'Enter a valid ticker, such as QQQ or MQG.AX.' }, { status: 400 });
   try {
-    if (user.id === 'admin') await addHolding(id, symbol.includes('.') ? symbol : `${symbol}.AX`);
-    else await addHolding(id, symbol.includes('.') ? symbol : `${symbol}.AX`, user.id);
+    if (user.id === 'admin') await addHolding(id, symbol);
+    else await addHolding(id, symbol, user.id);
     return Response.json({ ok: true }, { status: 201 });
   } catch {
     return Response.json({ error: 'Portfolio not found.' }, { status: 404 });

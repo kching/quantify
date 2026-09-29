@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import { calculateBrokerage } from '@/core/brokerage';
 import type { PortfolioTrade, TradeSide } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,17 +47,17 @@ export default function Index({ portfolioId, symbols, trades, tickers, filter, p
   const [side, setSide] = useState<TradeSide>('BUY');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
-  const [brokerage, setBrokerage] = useState('');
   const [tradeTime, setTradeTime] = useState(localDateTimeValue);
+  const calculatedBrokerage = calculateBrokerage(Number(quantity) * Number(price));
 
   async function submitTrade(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!portfolioId) return;
-    const saved = await onSubmit({ symbol, side, quantity: Number(quantity), price: Number(price), brokerage: brokerage ? Number(brokerage) : 0, timestamp: tradeTime ? new Date(tradeTime).getTime() : Date.now() });
+    const timestamp = tradeTime ? new Date(tradeTime).getTime() : 0;
+    const saved = await onSubmit({ symbol, side, quantity: Number(quantity), price: Number(price), brokerage: calculatedBrokerage, timestamp });
     if (!saved) return;
     setQuantity('');
     setPrice('');
-    setBrokerage('');
     setTradeTime(localDateTimeValue());
   }
 
@@ -64,12 +65,12 @@ export default function Index({ portfolioId, symbols, trades, tickers, filter, p
     <form className="trade-form" onSubmit={(event) => void submitTrade(event)}>
       <div className="trade-form-row">
         <label>TYPE<SelectControl value={side} displayValue={side === 'BUY' ? 'Buy' : 'Sell'} ariaLabel="Trade side" onValueChange={(value) => setSide(value as TradeSide)}><SelectOption value="BUY">Buy</SelectOption><SelectOption value="SELL">Sell</SelectOption></SelectControl></label>
-        <label>ASX TICKER<Input aria-label="Trade ticker" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} placeholder="e.g. MQG.AX" list="portfolio-tickers" required maxLength={20}/><datalist id="portfolio-tickers">{symbols.map((ticker) => <option key={ticker} value={ticker}/>)}</datalist></label>
+        <label>TICKER<Input aria-label="Trade ticker" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} placeholder="e.g. QQQ or MQG.AX" list="portfolio-tickers" required maxLength={20}/><datalist id="portfolio-tickers">{symbols.map((ticker) => <option key={ticker} value={ticker}/>)}</datalist></label>
       </div>
       <div className="trade-form-row">
         <label>UNITS<Input aria-label="Trade units" type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} required/></label>
         <label>PRICE / UNIT (AUD)<Input aria-label="Trade price" type="number" min="0.000001" step="any" value={price} onChange={(event) => setPrice(event.target.value)} required/></label>
-        <label>BROKERAGE (AUD)<Input aria-label="Trade brokerage" type="number" min="0" step="0.01" value={brokerage} onChange={(event) => setBrokerage(event.target.value)} placeholder="0.00"/></label>
+        <label>BROKERAGE (AUD)<Input aria-label="Trade brokerage" type="number" value={calculatedBrokerage ? calculatedBrokerage.toFixed(2) : ''} readOnly tabIndex={-1}/></label>
       </div>
       <div className="trade-form-row">
         <div>
@@ -78,7 +79,7 @@ export default function Index({ portfolioId, symbols, trades, tickers, filter, p
       </div>
       <Button type="submit" disabled={busy || !portfolioId}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : <Plus className="size-4"/>}{busy ? 'Saving…' : 'Save trade'}</Button>
     </form>
-    <p className="form-hint">Trade date/time defaults to the current local time. Values are in Australian dollars; sells cannot exceed your recorded position.</p>
+    <p className="form-hint">Brokerage is calculated automatically from the trade value. Trade date/time defaults to the current local time; sells cannot exceed your recorded position.</p>
     <div className="trade-history"><div className="trade-history-heading"><h3>Recent trades</h3><label className="trade-filter-label"><span>TICKER</span><SelectControl value={filter || 'ALL'} displayValue={filter || 'All tickers'} ariaLabel="Filter trades by ticker" onValueChange={(value) => onFilterChange(value === 'ALL' ? '' : value)}><SelectOption value="ALL">All tickers</SelectOption>{tickers.map((ticker) => <SelectOption key={ticker} value={ticker}>{ticker}</SelectOption>)}</SelectControl></label></div>
       {trades.length ? <><div className="trade-table">{trades.map((trade) => <div className="trade-row" key={trade.id}><Badge variant={trade.side === 'BUY' ? 'success' : 'danger'}>{trade.side}</Badge><strong>{trade.symbol}</strong><span>{trade.quantity} @ {money.format(trade.price)}</span><small>Brokerage {money.format(trade.brokerage)} · {dateTime.format(trade.timestamp)}</small><Button variant="ghost" size="icon" className="trade-delete-button" aria-label={`Delete ${trade.symbol} ${trade.side} trade ${dateTime.format(trade.timestamp)}`} disabled={busy} onClick={() => void onDelete(trade)}><Trash2 className="size-4"/></Button></div>)}</div><div className="trade-pagination"><span>{(page - 1) * 6 + 1}–{Math.min(page * 6, total)} of {total}</span><div><Button variant="ghost" size="sm" aria-label="Previous trade page" disabled={busy || page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}><ChevronLeft className="size-4"/>Previous</Button><span>Page {page} of {Math.max(pageCount, 1)}</span><Button variant="ghost" size="sm" aria-label="Next trade page" disabled={busy || page >= pageCount} onClick={() => onPageChange(page + 1)}>Next<ChevronRight className="size-4"/></Button></div></div></> : <div className="chart-empty">{filter ? `No trades recorded for ${filter}.` : 'No trades recorded for this portfolio.'}</div>}
     </div>

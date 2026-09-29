@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet, X } from 'lucide-react';
 import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult, UserProfile } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -80,8 +80,19 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [signalError, setSignalError] = useState('');
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(''), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
+  useEffect(() => {
+    if (!signalError) return;
+    const timer = window.setTimeout(() => setSignalError(''), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [signalError]);
   const loadPortfolios = useCallback(async (selectFirst = false): Promise<void> => {
     const response = await fetch('/api/portfolios');
     const body = await response.json() as { portfolios: PortfolioWithHoldings[] };
@@ -130,8 +141,8 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     setCashPage(body.page);
   }, [portfolioId]);
 
-  const refresh = useCallback(async (): Promise<void> => {
-    if (!portfolioId) return;
+  const refresh = useCallback(async (): Promise<ScanPayload | null> => {
+    if (!portfolioId) return null;
     setLoading(true);
     setError('');
     try {
@@ -147,8 +158,10 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       setAlerts(alertBody.alerts);
       setPerformance(performanceBody);
       setLastScannedAt(Date.now());
+      return scanBody;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Market scan failed.');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -222,12 +235,23 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   async function addHolding(symbol: string): Promise<boolean> {
     if (!portfolioId) return false;
     setBusy(true);
+    setSignalError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/holdings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol }) });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error);
       await loadPortfolios();
-      await refresh();
+      const scanResult = await refresh();
+      const normalizedSymbol = symbol.trim().toUpperCase();
+      const yahooWarning = scanResult?.warnings.find((warning) => warning.startsWith(`${normalizedSymbol} `));
+      if (yahooWarning) {
+        const removeResponse = await fetch(`/api/portfolios/${portfolioId}/holdings?symbol=${encodeURIComponent(normalizedSymbol)}`, { method: 'DELETE' });
+        if (!removeResponse.ok) throw new Error('Yahoo Finance could not load this ticker, and it could not be removed automatically.');
+        await loadPortfolios();
+        setScan(null);
+        setSignalError(`${yahooWarning} The ticker was removed from this portfolio.`);
+        return false;
+      }
       return true;
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not add ticker.'); return false; }
     finally { setBusy(false); }
@@ -349,12 +373,12 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       </header>
 
       <div className="dashboard-content">
-        <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the ASX, refreshed against your portfolio.</p></div>
+        <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the market, refreshed against your portfolio.</p></div>
           <div className="portfolio-picker"><label htmlFor="portfolio-picker">ACTIVE PORTFOLIO</label><SelectControl id="portfolio-picker" value={portfolioId === null ? '' : String(portfolioId)} displayValue={currentPortfolio?.name} ariaLabel="PORTFOLIO" placeholder="Select a portfolio" className="portfolio-select" onValueChange={(value) => { if (value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(value) || null); setTradePage(1); setTradeFilter(''); } }}>
             {portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}<SelectOption value="new">＋ New portfolio…</SelectOption>
           </SelectControl><Button variant="ghost" size="icon" className="delete-portfolio" aria-label="Delete portfolio" title="Delete portfolio" disabled={!portfolioId || busy} onClick={() => void deletePortfolio()}><Trash2 className="size-4"/></Button></div>
         </section>
-        {error && <div className="notice notice-error" role="alert">{error}</div>}
+        {error && <div className="notice notice-error" role="alert"><span>{error}</span><button className="notice-dismiss" type="button" aria-label="Dismiss error" onClick={() => setError('')}><X className="size-4"/></button></div>}
 
         <section className="metric-grid" aria-label="Portfolio summary">
           <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon blue"><Wallet/></div><div className="metric-label">TOTAL PORTFOLIO VALUE</div><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.totalValue) : '—'}</strong><small>{latestPortfolioPerformance ? 'Cash + holdings at latest hourly close' : 'Record trades and cash entries to track'}</small></CardContent></Card>
@@ -364,7 +388,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         </section>
 
         <section className="overview-grid" id="portfolio">
-          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={currentPortfolio?.holdings ?? []} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding}/>
+          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={currentPortfolio?.holdings ?? []} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} error={signalError} onDismissError={() => setSignalError('')} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding}/>
           <RecentMovements tickers={currentPortfolio?.holdings.slice(0, 4).map(({ symbol }) => symbol) ?? []} timeframe="1H · LAST 48 BARS" signals={scan?.signals ?? []}/>
         </section>
 
@@ -378,7 +402,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         </section>
 
         <section className="activity-section">
-          <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol.replace('.AX', '')}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
+          <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
         </section>
 
         <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span><span>Local only · Candles stored on this device</span></footer>

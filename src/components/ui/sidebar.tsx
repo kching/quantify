@@ -1,7 +1,7 @@
 import { Button as BaseButton } from '@base-ui/react/button';
 import Link from 'next/link';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ComponentProps, MouseEventHandler, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export function Sidebar({ className, ...props }: ComponentProps<'aside'>): React.JSX.Element {
@@ -39,12 +39,13 @@ interface SidebarMenuButtonProps {
   className?: string;
   title?: string;
   ariaLabel?: string;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }
 
-export function SidebarMenuButton({ href, isActive = false, children, className, title, ariaLabel }: SidebarMenuButtonProps): React.JSX.Element {
+export function SidebarMenuButton({ href, isActive = false, children, className, title, ariaLabel, onClick }: SidebarMenuButtonProps): React.JSX.Element {
   return <BaseButton
     nativeButton={false}
-    render={<Link href={href} aria-current={isActive ? 'page' : undefined}/>}
+    render={<Link href={href} aria-current={isActive ? 'page' : undefined} onClick={onClick}/>}
     role="link"
     aria-label={ariaLabel}
     data-slot="sidebar-menu-button"
