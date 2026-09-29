@@ -37,6 +37,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ### 3. Code hygiene
 - **Ensure ESLint passes**
 - **Enforce code styles with Prettier**
+- **Use conventional commits**
 
 ---
 
