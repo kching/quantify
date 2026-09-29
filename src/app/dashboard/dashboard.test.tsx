@@ -41,11 +41,6 @@ const rsiSignal: SignalResult = {
   ...buySignal, strategyId: 'rsi-14', strategyName: 'RSI (14)', signal: 'HOLD',
   rationale: 'RSI is neutral.', indicators: { rsi: 52 },
 };
-const backtestResult = {
-  symbol: 'MQG.AX', strategyId: 'rsi-14', initialBalance: 10_000, finalBalance: 11_250,
-  totalReturnPct: 12.5, winRatePct: 60, maxDrawdownPct: -8.2, trades: [{ entryDate: 1, exitDate: 2, entryPrice: 100, exitPrice: 110, pnlPct: 10 }],
-};
-
 let portfolios: PortfolioWithHoldings[];
 let trades: PortfolioTrade[];
 let cashTransactions: Array<{ id: number; portfolioId: number; type: 'DEPOSIT' | 'WITHDRAWAL'; amount: number; timestamp: number; note: string }>;
@@ -53,7 +48,6 @@ let performance: PerformanceSnapshots;
 let scanPayload: { signals: Array<{ daily: SignalResult[]; hourly: SignalResult[]; dailyCandles: Candle[]; hourlyCandles: Candle[] }>; warnings: string[] };
 let alerts: Array<SignalResult & { id: number; portfolioId: number }>;
 let scanStatus = 200;
-let backtestStatus = 200;
 let omitTradeTickers = false;
 let confirmMock: ReturnType<typeof mock>;
 const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -133,7 +127,6 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
       : Response.json({ error: 'Market scan failed' }, { status: scanStatus });
   }
   if (url.pathname === '/api/alerts') return Response.json({ alerts });
-  if (url.pathname === '/api/backtest') return Response.json(backtestStatus === 200 ? { result: backtestResult } : { error: 'Not enough candle history.' }, { status: backtestStatus });
   throw new Error(`Unexpected dashboard request: ${method} ${url.pathname}`);
 });
 
@@ -172,7 +165,6 @@ beforeEach(() => {
   };
   alerts = [{ ...buySignal, id: 10, portfolioId: 1 }];
   scanStatus = 200;
-  backtestStatus = 200;
   omitTradeTickers = false;
   fetchMock.mockClear();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -425,29 +417,4 @@ describe('Dashboard', () => {
     expect(screen.getByRole('button', { name: /Scanning…|Refresh data/ })).toBeDefined();
   });
 
-  it('runs a selected strategy backtest and displays its summary', async () => {
-    render(<Dashboard />);
-    await waitForPortfolio();
-    await waitForScanCompletion();
-
-    await chooseOption('Backtest strategy', 'RSI (14)');
-    fireEvent.click(screen.getByRole('button', { name: 'Run backtest' }));
-
-    expect(await screen.findByText('LAST RUN · RSI (14)')).toBeDefined();
-    expect(screen.getByText('12.5%')).toBeDefined();
-    expect(screen.getByText('60%')).toBeDefined();
-    expect(screen.getByText('1', { selector: '.backtest-results strong' })).toBeDefined();
-    expect(fetchMock).toHaveBeenCalledWith('/api/backtest?symbol=MQG.AX&strategy=rsi-14&days=365');
-  });
-
-  it('renders an API error when the backtest cannot run', async () => {
-    backtestStatus = 422;
-    render(<Dashboard />);
-    await waitForPortfolio();
-    await waitForScanCompletion();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Run backtest' }));
-
-    expect(await screen.findByText('Not enough candle history.')).toBeDefined();
-  });
 });
