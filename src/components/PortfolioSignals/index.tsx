@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { Candle, PortfolioHolding, SignalResult } from '@/core/types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,7 +38,7 @@ export default function Index({ hasPortfolio, holdings, signals, warnings, lastS
     if (await onAddHolding(symbolInput)) setSymbolInput('');
   }
 
-  return <Card className="signals-card"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL MONITOR</p><CardTitle>Portfolio signals</CardTitle></div><Badge variant="success" className="live-badge"><i/>Live monitor</Badge></CardHeader>
+  return <Card className="signals-card"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL MONITOR</p><CardTitle>Portfolio signals</CardTitle></div></CardHeader>
     <CardContent className="signals-content">
       {hasPortfolio && <div className="watchlist-tools"><form className="inline-form" onSubmit={(event) => void addHolding(event)}><Input aria-label="ASX ticker" placeholder="Add ASX ticker e.g. CSL" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} maxLength={20}/><Button type="submit" variant="outline" size="sm" disabled={busy || !symbolInput.trim()}>Add asset</Button></form></div>}
       <div className="table-wrap"><table><thead><tr><th>ASSET</th><th>LAST PRICE</th><th>DAILY KVO</th><th>DAILY RSI</th><th>DAILY CHANGE</th><th><span className="sr-only">ACTIONS</span></th></tr></thead><tbody>{holdings.map((holding) => {

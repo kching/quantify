@@ -2,18 +2,17 @@
 
 import { useState, useSyncExternalStore } from 'react';
 import { Activity, BarChart3, CircleHelp, LayoutDashboard, Wallet, Microscope } from 'lucide-react';
-import Link from 'next/link';
+import { signOut } from 'next-auth/react';
+import type { UserProfile } from '@/core/types';
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
 } from '@/components/ui/sidebar';
 
 type AppPage = 'dashboard' | 'research';
@@ -34,22 +33,24 @@ function subscribeToLocation(onChange: () => void): () => void {
   };
 }
 
-export default function AppSidebar({ page }: { page: AppPage }): React.JSX.Element {
+export default function AppSidebar({ page, user }: { page: AppPage; user?: Pick<UserProfile, 'name' | 'image'> }): React.JSX.Element {
   const section = useSyncExternalStore(subscribeToLocation, getActiveSection, () => 'overview');
   const [collapsed, setCollapsed] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const dashboardActive = page === 'dashboard';
+  const displayName = user?.name ?? 'Admin';
+  const firstName = displayName.trim().split(/\s+/)[0] || 'User';
+  const avatarLabel = firstName.slice(0, 1).toUpperCase();
 
   return <Sidebar data-collapsed={collapsed}>
     <SidebarHeader>
-      <Link className="sidebar-brand" href="/#top" aria-label="Quantify home">
+      <button className="sidebar-brand" type="button" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} onClick={() => setCollapsed((value) => !value)}>
         <span className="sidebar-logo">Q</span>
         <span className="sidebar-brand-copy">quantify<span>.</span></span>
-      </Link>
-      <SidebarTrigger collapsed={collapsed} onClick={() => setCollapsed((value) => !value)}/>
+      </button>
     </SidebarHeader>
     <SidebarContent>
       <SidebarGroup>
-        <SidebarGroupLabel>WORKSPACE</SidebarGroupLabel>
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton href="/#overview" title="Overview" ariaLabel="Overview" isActive={dashboardActive && section === 'overview'}><LayoutDashboard/><span className="sidebar-menu-label">Overview</span></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton href="/#portfolio" title="Portfolio signals" ariaLabel="Portfolio signals" isActive={dashboardActive && section === 'portfolio'}><Activity/><span className="sidebar-menu-label">Portfolio signals</span></SidebarMenuButton></SidebarMenuItem>
@@ -61,7 +62,13 @@ export default function AppSidebar({ page }: { page: AppPage }): React.JSX.Eleme
     </SidebarContent>
     <SidebarFooter>
       <div className="sidebar-help"><CircleHelp/><span>Decision support only<br/><small>No orders are sent</small></span></div>
-      <div className="sidebar-profile"><span className="profile-avatar" aria-label="admin">A</span><span className="sidebar-profile-copy"><strong>admin</strong><small>Local workspace</small></span></div>
+      <div className="sidebar-profile-wrap">
+        <button className="sidebar-profile" type="button" aria-label="Open account menu" aria-expanded={profileOpen} onClick={() => setProfileOpen((value) => !value)}>
+          <span className="profile-avatar" aria-hidden="true" style={user?.image ? { backgroundImage: `url(${user.image})` } : undefined}>{user?.image ? null : avatarLabel}</span>
+          <span className="sidebar-profile-copy"><strong>{firstName}</strong></span>
+        </button>
+        {profileOpen && <div className="profile-menu" role="menu"><button type="button" role="menuitem" onClick={() => void signOut({ callbackUrl: '/' })}>Sign out</button></div>}
+      </div>
     </SidebarFooter>
   </Sidebar>;
 }

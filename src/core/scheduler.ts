@@ -1,5 +1,6 @@
 import { updateAllPortfolioMarkets } from './market';
 import { evictExpiredTimeSeriesData } from './db';
+import { publishMarketUpdate } from './market-update-events';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -20,6 +21,7 @@ async function runMarketUpdate(): Promise<void> {
     const result = await updateAllPortfolioMarkets();
     console.info(`[quantify] Market update complete: ${result.symbolCount} unique tickers across ${result.portfolioCount} portfolios.`);
     for (const warning of result.warnings) console.warn(`[quantify] ${warning}`);
+    publishMarketUpdate({ completedAt: Date.now() });
   } catch (error) {
     console.error('[quantify] Scheduled market update failed.', error);
   } finally {

@@ -36,6 +36,16 @@ export interface Portfolio {
   createdAt: number;
 }
 
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string | null;
+  image: string | null;
+  isAnonymous: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface PortfolioHolding {
   symbol: string;
   addedAt: number;

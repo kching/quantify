@@ -57,15 +57,15 @@ async function scanSymbol(symbol: string, warnings: string[]): Promise<SymbolSca
     };
 }
 
-export async function scanPortfolio(portfolioId: number): Promise<{ signals: Array<SymbolScan & { symbol: string }>; warnings: string[] }> {
-  const portfolio = (await listPortfolios()).find((item) => item.id === portfolioId);
+export async function scanPortfolio(portfolioId: number, userId = 'admin'): Promise<{ signals: Array<SymbolScan & { symbol: string }>; warnings: string[] }> {
+  const portfolio = (await listPortfolios(userId)).find((item) => item.id === portfolioId);
   if (!portfolio) throw new Error('Portfolio not found.');
   const warnings: string[] = [];
   const tradedSymbols = await listPortfolioTradeSymbols(portfolioId);
   const symbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);
   const signals = await Promise.all([...symbols].map(async (symbol) => {
     const result = await scanSymbol(symbol, warnings);
-    for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal);
+    for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal, userId);
     return { symbol, ...result };
   }));
   await capturePortfolioPerformance(portfolioId);
@@ -74,21 +74,21 @@ export async function scanPortfolio(portfolioId: number): Promise<{ signals: Arr
 
 export async function updateAllPortfolioMarkets(): Promise<{ portfolioCount: number; symbolCount: number; warnings: string[] }> {
   const portfolios = await listPortfolios();
-  const ownersBySymbol = new Map<string, number[]>();
+  const ownersBySymbol = new Map<string, Array<{ id: number; userId: string }>>();
   for (const portfolio of portfolios) {
     const tradedSymbols = await listPortfolioTradeSymbols(portfolio.id);
     const symbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);
     for (const symbol of symbols) {
       const owners = ownersBySymbol.get(symbol) ?? [];
-      owners.push(portfolio.id);
+      owners.push({ id: portfolio.id, userId: portfolio.userId });
       ownersBySymbol.set(symbol, owners);
     }
   }
   const warnings: string[] = [];
   await Promise.all([...ownersBySymbol].map(async ([symbol, portfolioIds]) => {
     const result = await scanSymbol(symbol, warnings);
-    for (const portfolioId of portfolioIds) {
-      for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal);
+    for (const owner of portfolioIds) {
+      for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(owner.id, signal, owner.userId);
     }
   }));
   await Promise.all(portfolios.map(({ id }) => capturePortfolioPerformance(id)));

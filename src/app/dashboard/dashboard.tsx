@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet } from 'lucide-react';
-import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
+import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult, UserProfile } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,7 +57,7 @@ function HoldingPulseChart({ symbol, points }: { symbol: string; points: Holding
 }
 */
 
-export default function Dashboard() {
+export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 'image'> }) {
   const [portfolios, setPortfolios] = useState<PortfolioWithHoldings[]>([]);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
   const [scan, setScan] = useState<ScanPayload | null>(null);
@@ -174,6 +174,12 @@ export default function Dashboard() {
     const timer = window.setInterval(() => void refresh(), 15 * 60_000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [portfolioId, refresh]);
+  useEffect(() => {
+    if (typeof window.EventSource === 'undefined') return;
+    const eventSource = new EventSource('/api/market-updates');
+    eventSource.onmessage = () => { void refresh(); };
+    return () => eventSource.close();
+  }, [refresh]);
 
   async function createPortfolio(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -324,7 +330,7 @@ export default function Dashboard() {
   const latestPortfolioPerformance = performance.portfolio.at(-1);
 
   return <div className="app-shell" id="top">
-    <AppSidebar page="dashboard"/>
+    <AppSidebar page="dashboard" user={user}/>
 
     <main className="app-main">
       <header className="app-header">

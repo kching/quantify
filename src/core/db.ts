@@ -5,9 +5,13 @@ import { dirname, join } from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import type { Candle, CandleInterval, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade } from './types';
+import type { Candle, CandleInterval, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, UserProfile } from './types';
 
-const users = sqliteTable('users', { id: text('id').primaryKey(), name: text('name').notNull() });
+const users = sqliteTable('users', {
+  id: text('id').primaryKey(), name: text('name').notNull(), email: text('email'), image: text('image'),
+  googleSubject: text('google_subject'), isAnonymous: integer('is_anonymous', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at').notNull().default(0), updatedAt: integer('updated_at').notNull().default(0),
+}, (table) => [uniqueIndex('users_google_subject').on(table.googleSubject)]);
 const portfolios = sqliteTable('portfolios', {
   id: integer('id').primaryKey({ autoIncrement: true }), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(), createdAt: integer('created_at').notNull(),
@@ -57,7 +61,7 @@ async function initializeDatabase(): Promise<void> {
     PRAGMA busy_timeout = 5000;
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
-    CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, google_subject TEXT UNIQUE, is_anonymous INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
     CREATE TABLE IF NOT EXISTS candles (symbol TEXT NOT NULL, interval TEXT NOT NULL, timestamp INTEGER NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY(symbol, interval, timestamp));
@@ -69,6 +73,14 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, average_unit_price REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
     CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
   `);
+  const userColumns = await client.execute('PRAGMA table_info(users)');
+  const userColumnNames = new Set(userColumns.rows.map((row) => String(row.name)));
+  if (!userColumnNames.has('email')) await client.execute('ALTER TABLE users ADD COLUMN email TEXT');
+  if (!userColumnNames.has('image')) await client.execute('ALTER TABLE users ADD COLUMN image TEXT');
+  if (!userColumnNames.has('google_subject')) await client.execute('ALTER TABLE users ADD COLUMN google_subject TEXT');
+  if (!userColumnNames.has('is_anonymous')) await client.execute('ALTER TABLE users ADD COLUMN is_anonymous INTEGER NOT NULL DEFAULT 0');
+  if (!userColumnNames.has('created_at')) await client.execute('ALTER TABLE users ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0');
+  if (!userColumnNames.has('updated_at')) await client.execute('ALTER TABLE users ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
   const performanceColumns = await client.execute('PRAGMA table_info(portfolio_performance)');
   const columnNames = new Set(performanceColumns.rows.map((row) => String(row.name)));
   if (!columnNames.has('cash_balance')) await client.execute('ALTER TABLE portfolio_performance ADD COLUMN cash_balance REAL NOT NULL DEFAULT 0');
@@ -81,7 +93,8 @@ async function initializeDatabase(): Promise<void> {
   }
   const adminUser = await db.select({ id: users.id }).from(users).where(eq(users.id, 'admin')).get();
   if (!adminUser) {
-    await db.insert(users).values({ id: 'admin', name: 'Admin' }).run();
+    const now = Date.now();
+    await db.insert(users).values({ id: 'admin', name: 'Admin', isAnonymous: true, createdAt: now, updatedAt: now }).run();
     const createdAt = Date.now();
     const inserted = await db.insert(portfolios).values({ userId: 'admin', name: 'My watchlist', createdAt }).returning({ id: portfolios.id }).get();
     await db.insert(holdings).values(['MQG.AX', 'COL.AX', 'XRO.AX', 'VGS.AX', 'REA.AX'].map((symbol) => ({ portfolioId: inserted.id, symbol, addedAt: createdAt }))).run();
@@ -95,26 +108,47 @@ function ensureDatabase(): Promise<void> {
   return initialization;
 }
 
-export async function listPortfolios(): Promise<Array<Portfolio & { holdings: PortfolioHolding[] }>> {
+export async function ensureUserProfile(input: { id: string; name: string; email?: string | null; image?: string | null; googleSubject?: string | null; isAnonymous?: boolean }): Promise<UserProfile> {
   await ensureDatabase();
-  const rows = await db.select().from(portfolios).where(eq(portfolios.userId, 'admin')).orderBy(portfolios.createdAt).all();
+  const now = Date.now();
+  await db.insert(users).values({ id: input.id, name: input.name, email: input.email ?? null, image: input.image ?? null, googleSubject: input.googleSubject ?? null, isAnonymous: input.isAnonymous ?? false, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: users.id, set: { name: input.name, email: input.email ?? null, image: input.image ?? null, googleSubject: input.googleSubject ?? null, isAnonymous: input.isAnonymous ?? false, updatedAt: now } }).run();
+  const row = await db.select().from(users).where(eq(users.id, input.id)).get();
+  if (!row) throw new Error('Could not create user profile.');
+  return row as UserProfile;
+}
+
+export async function getUserProfile(userId: string): Promise<UserProfile | null> {
+  await ensureDatabase();
+  return (await db.select().from(users).where(eq(users.id, userId)).get()) as UserProfile | null;
+}
+
+export async function listPortfolios(userId = 'admin'): Promise<Array<Portfolio & { holdings: PortfolioHolding[] }>> {
+  await ensureDatabase();
+  const rows = await db.select().from(portfolios).where(eq(portfolios.userId, userId)).orderBy(portfolios.createdAt).all();
   return Promise.all(rows.map(async (portfolio) => ({
     ...portfolio, holdings: await db.select({ symbol: holdings.symbol, addedAt: holdings.addedAt }).from(holdings).where(eq(holdings.portfolioId, portfolio.id)).orderBy(holdings.symbol).all(),
   })));
 }
 
-export async function createPortfolio(name: string): Promise<Portfolio> {
+export async function createPortfolio(name: string, userId = 'admin'): Promise<Portfolio> {
   await ensureDatabase();
-  return db.insert(portfolios).values({ userId: 'admin', name, createdAt: Date.now() }).returning().get();
+  return db.insert(portfolios).values({ userId, name, createdAt: Date.now() }).returning().get();
 }
 
-export async function deletePortfolio(id: number): Promise<void> {
+export async function deletePortfolio(id: number, userId = 'admin'): Promise<void> {
   await ensureDatabase();
-  await db.delete(portfolios).where(and(eq(portfolios.id, id), eq(portfolios.userId, 'admin'))).run();
+  await db.delete(portfolios).where(and(eq(portfolios.id, id), eq(portfolios.userId, userId))).run();
 }
 
-export async function addHolding(portfolioId: number, symbol: string): Promise<void> {
+export async function ownsPortfolio(portfolioId: number, userId = 'admin'): Promise<boolean> {
   await ensureDatabase();
+  return Boolean(await db.select({ id: portfolios.id }).from(portfolios).where(and(eq(portfolios.id, portfolioId), eq(portfolios.userId, userId))).get());
+}
+
+export async function addHolding(portfolioId: number, symbol: string, userId = 'admin'): Promise<void> {
+  await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
   await db.insert(holdings).values({ portfolioId, symbol, addedAt: Date.now() }).onConflictDoNothing().run();
 }
 
@@ -178,16 +212,17 @@ export async function listCashTransactionPage(portfolioId: number, requestedPage
   return { transactions: rows as PortfolioCashTransaction[], total, page, pageSize, pageCount };
 }
 
-export async function recordCashTransaction(input: Omit<PortfolioCashTransaction, 'id'>): Promise<PortfolioCashTransaction> {
+export async function recordCashTransaction(input: Omit<PortfolioCashTransaction, 'id'>, userId = 'admin'): Promise<PortfolioCashTransaction> {
   await ensureDatabase();
   const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
-    .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, 'admin'))).get();
+    .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, userId))).get();
   if (!portfolio) throw new Error('Portfolio not found.');
   return db.insert(cashTransactions).values(input).returning().get() as Promise<PortfolioCashTransaction>;
 }
 
-export async function deleteCashTransaction(portfolioId: number, transactionId: number): Promise<PortfolioCashTransaction> {
+export async function deleteCashTransaction(portfolioId: number, transactionId: number, userId = 'admin'): Promise<PortfolioCashTransaction> {
   await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
   const transaction = await db.select().from(cashTransactions)
     .where(and(eq(cashTransactions.portfolioId, portfolioId), eq(cashTransactions.id, transactionId))).get();
   if (!transaction) throw new Error('Cash transaction not found.');
@@ -197,10 +232,10 @@ export async function deleteCashTransaction(portfolioId: number, transactionId: 
   return transaction as PortfolioCashTransaction;
 }
 
-export async function recordTrade(input: Omit<PortfolioTrade, 'id'>): Promise<PortfolioTrade> {
+export async function recordTrade(input: Omit<PortfolioTrade, 'id'>, userId = 'admin'): Promise<PortfolioTrade> {
   await ensureDatabase();
   const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
-    .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, 'admin'))).get();
+    .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, userId))).get();
   if (!portfolio) throw new Error('Portfolio not found.');
 
   const previousTrades = await db.select({ id: trades.id, side: trades.side, quantity: trades.quantity, timestamp: trades.timestamp }).from(trades)
@@ -218,10 +253,10 @@ export async function recordTrade(input: Omit<PortfolioTrade, 'id'>): Promise<Po
   return inserted as PortfolioTrade;
 }
 
-export async function deletePortfolioTrade(portfolioId: number, tradeId: number): Promise<PortfolioTrade> {
+export async function deletePortfolioTrade(portfolioId: number, tradeId: number, userId = 'admin'): Promise<PortfolioTrade> {
   await ensureDatabase();
   const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
-    .where(and(eq(portfolios.id, portfolioId), eq(portfolios.userId, 'admin'))).get();
+    .where(and(eq(portfolios.id, portfolioId), eq(portfolios.userId, userId))).get();
   if (!portfolio) throw new Error('Portfolio not found.');
   const trade = await db.select().from(trades)
     .where(and(eq(trades.portfolioId, portfolioId), eq(trades.id, tradeId))).get();
@@ -241,8 +276,9 @@ export async function deletePortfolioTrade(portfolioId: number, tradeId: number)
   return trade as PortfolioTrade;
 }
 
-export async function removeHolding(portfolioId: number, symbol: string): Promise<void> {
+export async function removeHolding(portfolioId: number, symbol: string, userId = 'admin'): Promise<void> {
   await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
   await db.delete(holdings).where(sql`${holdings.portfolioId} = ${portfolioId} AND ${holdings.symbol} = ${symbol}`).run();
 }
 
@@ -271,16 +307,16 @@ export async function evictExpiredTimeSeriesData(referenceTime = Date.now()): Pr
   ]);
 }
 
-export async function recordAlert(portfolioId: number, result: { symbol: string; strategyId: string; signal: string; timestamp: number; price: number; rationale: string; indicators: Record<string, number> }): Promise<void> {
+export async function recordAlert(portfolioId: number, result: { symbol: string; strategyId: string; signal: string; timestamp: number; price: number; rationale: string; indicators: Record<string, number> }, userId = 'admin'): Promise<void> {
   await ensureDatabase();
-  await db.insert(alerts).values({ userId: 'admin', portfolioId, ...result, indicators: JSON.stringify(result.indicators) }).onConflictDoNothing().run();
+  await db.insert(alerts).values({ userId, portfolioId, ...result, indicators: JSON.stringify(result.indicators) }).onConflictDoNothing().run();
 }
 
-export async function listAlerts(portfolioId?: number): Promise<Array<Record<string, unknown>>> {
+export async function listAlerts(portfolioId?: number, userId = 'admin'): Promise<Array<Record<string, unknown>>> {
   await ensureDatabase();
   const rows = portfolioId
-    ? await db.select().from(alerts).where(sql`${alerts.userId} = 'admin' AND ${alerts.portfolioId} = ${portfolioId}`).orderBy(desc(alerts.timestamp)).limit(100).all()
-    : await db.select().from(alerts).where(eq(alerts.userId, 'admin')).orderBy(desc(alerts.timestamp)).limit(100).all();
+    ? await db.select().from(alerts).where(and(eq(alerts.userId, userId), eq(alerts.portfolioId, portfolioId))).orderBy(desc(alerts.timestamp)).limit(100).all()
+    : await db.select().from(alerts).where(eq(alerts.userId, userId)).orderBy(desc(alerts.timestamp)).limit(100).all();
   return rows.map((row) => ({ ...row, indicators: JSON.parse(row.indicators) as Record<string, number> }));
 }
 

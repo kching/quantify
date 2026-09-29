@@ -1,6 +1,6 @@
 # Quantify
 
-Quantify is a local, single-user ASX market monitor for human-led trading decisions. It scans portfolio tickers against daily technical strategies, shows hourly price context, records actionable signal events, and backtests against locally cached Yahoo Finance candles. It does not connect to brokerage accounts or place trades.
+Quantify is an ASX market monitor for human-led trading decisions. It scans portfolio tickers against daily technical strategies, shows hourly price context, records actionable signal events, and backtests against locally cached Yahoo Finance candles. It does not connect to brokerage accounts or place trades.
 
 ## Run locally
 
@@ -26,6 +26,18 @@ The backtest panel can run either Klinger or RSI over the same most recent year 
 
 - `src/core/` contains pure strategies, signal types, and backtest calculations, plus separate Yahoo and SQLite adapters.
 - `src/app/api/` contains Next.js route handlers for portfolios, holdings, market scans, alerts, and backtests.
-- The SQLite schema includes a user key on user-owned tables. The current local workspace uses the `admin` user so authentication can be added later.
+- The SQLite schema includes a user key on user-owned tables. Google-authenticated profiles live in the existing `users` table and every portfolio API operation is owner-scoped.
 
 Yahoo Finance chart data is accessed through its public chart endpoint. Data availability, intraday retention, and symbol coverage are controlled by Yahoo Finance.
+
+## Authentication
+
+Quantify uses Auth.js with Google OAuth. Configure these variables before running a non-test server:
+
+```bash
+AUTH_SECRET=replace-with-a-long-random-secret
+AUTH_GOOGLE_ID=your-google-oauth-client-id
+AUTH_GOOGLE_SECRET=your-google-oauth-client-secret
+```
+
+The local Google OAuth callback URL is `http://localhost:3000/api/auth/callback/google`. All users must authenticate with Google before accessing the dashboard or portfolio APIs.
