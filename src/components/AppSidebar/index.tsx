@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Activity, BarChart3, CircleHelp, LayoutDashboard, Wallet, Microscope } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import type { UserProfile } from '@/core/types';
+import './AppSidebar.css';
 import {
   Sidebar,
   SidebarContent,

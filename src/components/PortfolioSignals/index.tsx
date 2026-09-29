@@ -6,6 +6,7 @@ import type { Candle, PortfolioHolding, SignalResult } from '@/core/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import './PortfolioSignals.css';
 
 export interface PortfolioSignalRow {
   daily: SignalResult[];

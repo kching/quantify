@@ -5,6 +5,7 @@ import type { Candle } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PortfolioSignalRow } from '@/components/PortfolioSignals';
+import './RecentMovements.css';
 
 interface RecentMovementsProps {
   tickers: string[];

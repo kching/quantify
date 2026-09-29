@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { auth } from '@/lib/auth';
 import { GoogleIcon } from '@/components/GoogleIcon';
 import GoogleSignIn from '@/components/GoogleSignIn';
+import './landing.css';
 
 export default async function Home(): Promise<React.JSX.Element> {
   const session = await auth();

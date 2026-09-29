@@ -1,0 +1,22 @@
+@layer component-styles {
+.signals-content { padding: 0 20px 14px; }
+.watchlist-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 0 12px; border-top: 1px solid #edf0f4; }
+.inline-form { display: flex; min-width: min(100%, 260px); gap: 6px; }
+.inline-form input { height: 32px; font-size: 12px; }
+.inline-form .add-asset-button { width: 32px; height: 32px; }
+.table-wrap { width: 100%; overflow-x: auto; }
+.signals-card table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+.signals-card thead { background: #f8fafc; }
+.signals-card th { height: 33px; padding: 0 10px; color: #8995a6; font-size: 10px; font-weight: 750; letter-spacing: .65px; }
+.signals-card td { height: 53px; padding: 0 10px; border-top: 1px solid #eef1f5; color: #536174; font-size: 12px; }
+.signals-card th:last-child, .signals-card td:last-child { width: 38px; padding-right: 6px; text-align: right; }
+.asset-symbol { color: #253246; font-size: 13px; font-weight: 700; letter-spacing: .1px; }
+.price-cell { color: #35445b; font-weight: 600; font-variant-numeric: tabular-nums; }
+.signal-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 47px; padding: 4px 7px; border: 1px solid #e8ebf0; border-radius: 5px; background: #f7f8fa; color: #737f91; font-size: 10px; font-weight: 750; letter-spacing: .35px; }
+.signal-pill i { width: 5px; height: 5px; border-radius: 50%; background: #9da7b5; }
+.signal-pill.buy { border-color: #d2eee1; background: #effaf4; color: #16815c; }
+.signal-pill.sell { border-color: #f2dadd; background: #fff4f5; color: #b54353; }
+.signal-pill small { color: #7c899b; font-size: 10px; letter-spacing: 0; font-weight: 500; }
+.signal-pill.compact { min-width: 0; }
+}
+

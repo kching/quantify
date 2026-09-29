@@ -1,0 +1,16 @@
+@layer component-styles {
+.research-section { margin-top: 15px; }
+.backtest-panel .section-card-header { align-items: center; }
+.backtest-form { display: grid; grid-template-columns: minmax(140px, .7fr) minmax(150px, .7fr) auto; gap: 9px; }
+.backtest-result-label { margin: 17px 0 8px; color: #8995a6; font-size: 10px; font-weight: 750; letter-spacing: .65px; }
+.backtest-results { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+.backtest-results > div { display: flex; flex-direction: column; gap: 5px; padding: 11px; border: 1px solid #e9edf3; border-radius: 7px; background: #fafbfd; }
+.backtest-results small { color: #8c97a7; font-size: 10px; font-weight: 700; letter-spacing: .5px; }
+.backtest-results strong { color: #2d3b51; font-size: 17px; font-variant-numeric: tabular-nums; }
+.method-note { margin: 12px 0 0; color: #8793a4; font-size: 11px; line-height: 1.55; }
+@media (max-width: 520px) {
+  .backtest-form { grid-template-columns: minmax(0, 1fr); }
+  .backtest-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+}
+

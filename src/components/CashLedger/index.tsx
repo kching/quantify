@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { SelectControl, SelectOption } from '@/components/ui/select';
+import './CashLedger.css';
 
 export interface CashLedgerInput {
   type: CashTransactionType;
