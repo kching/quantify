@@ -220,7 +220,9 @@ describe('Dashboard', () => {
     await waitForPortfolio();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/scan?portfolioId=1'));
     expect(await screen.findByText('KVO crossed above its signal line.')).toBeDefined();
-    expect(screen.getByText('RSI 52')).toBeDefined();
+    expect(screen.getByRole('columnheader', { name: 'SIGNALS' })).toBeDefined();
+    expect(screen.getByLabelText('BUY: Klinger Volume Oscillator')).toBeDefined();
+    expect(screen.getByLabelText('HOLD: RSI (14)')).toBeDefined();
     expect(screen.getAllByText('BUY')).toHaveLength(2);
     expect(screen.getByText('$204.00')).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'DAILY CHANGE' })).toBeDefined();

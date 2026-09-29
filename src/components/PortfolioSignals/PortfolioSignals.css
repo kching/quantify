@@ -9,6 +9,8 @@
 .signals-card thead { background: #f8fafc; }
 .signals-card th { height: 33px; padding: 0 10px; color: #8995a6; font-size: 10px; font-weight: 750; letter-spacing: .65px; }
 .signals-card td { height: 53px; padding: 0 10px; border-top: 1px solid #eef1f5; color: #536174; font-size: 12px; }
+.signal-summary { display: flex; align-items: center; gap: 5px; }
+.signal-summary .signal-pill { justify-content: center; min-width: 51px; }
 .signals-card th:last-child, .signals-card td:last-child { width: 38px; padding-right: 6px; text-align: right; }
 .asset-symbol { color: #253246; font-size: 13px; font-weight: 700; letter-spacing: .1px; }
 .price-cell { color: #35445b; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -19,4 +21,3 @@
 .signal-pill small { color: #7c899b; font-size: 10px; letter-spacing: 0; font-weight: 500; }
 .signal-pill.compact { min-width: 0; }
 }
-
