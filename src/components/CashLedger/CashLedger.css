@@ -1,8 +1,17 @@
 @layer component-styles {
     .cash-form {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        display: flex;
+        flex-direction: column;
         gap: 12px;
+    }
+
+    .cash-form-row {
+        display: flex;
+        gap: 12px;
+    }
+
+    .cash-form-row > label {
+        flex: 1 1 0;
     }
 
     .cash-form label {
@@ -31,8 +40,9 @@
         font-size: 14px;
     }
 
-    .cash-form > button {
-        align-self: end;
+    .cash-form-actions {
+        display: flex;
+        justify-content: flex-start;
     }
 
     .cash-history {
@@ -41,6 +51,8 @@
         flex: 1;
         flex-direction: column;
         margin-top: 18px;
+        padding-top: 15px;
+        border-top: 1px solid #e9edf3;
     }
 
     .cash-history h4 {
@@ -88,8 +100,8 @@
     }
 
     @media (max-width: 520px) {
-        .cash-form {
-            grid-template-columns: minmax(0, 1fr);
+        .cash-form-row {
+            gap: 8px;
         }
 
         .cash-row {
@@ -108,4 +120,3 @@
         }
     }
 }
-

@@ -157,7 +157,6 @@ td:first-child, th:first-child { padding-left: 11px; }
 .ledger-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 14px; margin-top: 15px; }
 .trade-panel > .section-card-header, .cash-panel > .section-card-header, .alerts-panel > .section-card-header, .backtest-panel > .section-card-header { padding-bottom: 16px; }
 .ledger-grid > .trade-panel > .section-card-header, .ledger-grid > .cash-panel > .section-card-header { min-height: 147px; align-items: flex-start; padding: 16px; }
-.cash-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .trade-form label, .cash-form label, .portfolio-dialog-form label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: #7f8b9d; font-size: 10px; font-weight: 750; letter-spacing: .65px; }
 .trade-form label input, .cash-form label input { font-weight: 450; letter-spacing: 0; }
 .trade-form input[type="datetime-local"], .cash-form input[type="datetime-local"] { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding-right: 8px; padding-left: 8px; font-size: 14px; }
@@ -170,7 +169,6 @@ td:first-child, th:first-child { padding-left: 11px; }
 .ledger-grid > .cash-panel { display: grid; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
 .ledger-grid > .cash-panel > .p-6 { display: flex; min-height: 0; flex-direction: column; }
 .ledger-grid > .cash-panel > .p-6 > form { flex: 0 0 auto; }
-.cash-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .cash-history h4 { margin-bottom: 7px; }
 .cash-history > .chart-empty { min-height: 0; flex: 1; }
 .alert-list { display: grid; }
