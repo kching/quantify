@@ -24,8 +24,8 @@ export function SelectControl({ value, onValueChange, ariaLabel, id, placeholder
       <Select.Value placeholder={placeholder}>{selectedLabel}</Select.Value><Select.Icon><ChevronDown className="size-4 opacity-60"/></Select.Icon>
     </Select.Trigger>
     <Select.Portal>
-      <Select.Positioner sideOffset={5} className="z-50 outline-none">
-        <Select.Popup className="max-h-[var(--available-height)] min-w-[var(--anchor-width)] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+      <Select.Positioner side="bottom" align="start" alignItemWithTrigger={false} sideOffset={5} className="z-50 outline-none">
+        <Select.Popup className="w-[var(--anchor-width)] max-h-[var(--available-height)] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none">
           <Select.ScrollUpArrow className="flex justify-center py-1"><ChevronUp className="size-3"/></Select.ScrollUpArrow>
           <Select.List>{children}</Select.List>
           <Select.ScrollDownArrow className="flex justify-center py-1"><ChevronDown className="size-3"/></Select.ScrollDownArrow>
