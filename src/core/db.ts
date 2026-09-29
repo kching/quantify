@@ -120,7 +120,7 @@ export async function ensureUserProfile(input: { id: string; name: string; email
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   await ensureDatabase();
-  return (await db.select().from(users).where(eq(users.id, userId)).get()) as UserProfile | null;
+  return ((await db.select().from(users).where(eq(users.id, userId)).get()) as UserProfile | undefined) ?? null;
 }
 
 export async function listPortfolios(userId = 'admin'): Promise<Array<Portfolio & { holdings: PortfolioHolding[] }>> {

@@ -144,4 +144,37 @@ describe('trade and performance persistence', () => {
     expect(filtered.total).toBe(5);
     expect(filtered.tickers).toEqual(['AAA.AX', 'BBB.AX']);
   });
+
+  it('handles profile upserts, ownership checks, alerts, and missing ledger records', async () => {
+    const profile = await database.ensureUserProfile({ id: 'researcher', name: 'Researcher', email: 'one@example.com', image: 'avatar.png', googleSubject: 'google-1' });
+    expect(await database.getUserProfile('researcher')).toMatchObject({ id: 'researcher', name: 'Researcher', email: 'one@example.com' });
+
+    const updated = await database.ensureUserProfile({ id: profile.id, name: 'Updated Researcher', isAnonymous: false });
+    expect(updated).toMatchObject({ id: 'researcher', name: 'Updated Researcher', email: null, image: null, googleSubject: null, isAnonymous: false });
+    expect(await database.getUserProfile('missing-user')).toBeNull();
+
+    const portfolio = await database.createPortfolio('Research portfolio', profile.id);
+    expect(await database.ownsPortfolio(portfolio.id, profile.id)).toBe(true);
+    expect(await database.ownsPortfolio(portfolio.id, 'admin')).toBe(false);
+    await expect(database.addHolding(999_999, 'TEST.AX')).rejects.toThrow('Portfolio not found.');
+    await expect(database.removeHolding(999_999, 'TEST.AX')).rejects.toThrow('Portfolio not found.');
+    await expect(database.recordCashTransaction({ portfolioId: 999_999, type: 'DEPOSIT', amount: 10, timestamp: now, note: '' })).rejects.toThrow('Portfolio not found.');
+    await expect(database.deleteCashTransaction(portfolio.id, 999_999, profile.id)).rejects.toThrow('Cash transaction not found.');
+
+    await database.recordAlert(portfolio.id, { symbol: 'TEST.AX', strategyId: 'rsi-14', signal: 'BUY', timestamp: now, price: 100, rationale: 'test alert', indicators: { rsi: 29 } }, profile.id);
+    expect(await database.listAlerts(portfolio.id, profile.id)).toMatchObject([{ portfolioId: portfolio.id, indicators: { rsi: 29 } }]);
+    expect(await database.listAlerts(undefined, profile.id)).toHaveLength(1);
+    expect(await database.listCashTransactionPage(portfolio.id, 1)).toMatchObject({ transactions: [], total: 0, page: 1, pageCount: 0 });
+
+    const cashTransaction = await database.recordCashTransaction({ portfolioId: portfolio.id, type: 'DEPOSIT', amount: 25, timestamp: now, note: 'Test funding' }, profile.id);
+    await database.savePerformanceSnapshots(portfolio.id, {
+      holdings: [],
+      portfolio: [{ timestamp: now, cashBalance: 25, marketValue: 0, totalValue: 25, contributedCapital: 25, profitLoss: 0 }],
+    });
+    await expect(database.deleteCashTransaction(portfolio.id, cashTransaction.id, profile.id)).resolves.toMatchObject({ id: cashTransaction.id });
+    expect(await database.listPerformance(portfolio.id)).toEqual({ holdings: [], portfolio: [] });
+
+    await expect(database.deletePortfolio(portfolio.id, profile.id)).resolves.toBeUndefined();
+    expect(await database.ownsPortfolio(portfolio.id, profile.id)).toBe(false);
+  });
 });
