@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Tabs } from '@base-ui/react/tabs';
-import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronRight, CircleHelp, LayoutDashboard, LoaderCircle, Plus, RefreshCw, Settings2, Trash2, Wallet } from 'lucide-react';
-import type { BacktestResult, Candle, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
+import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronRight, CircleHelp, LayoutDashboard, LoaderCircle, RefreshCw, Settings2, Trash2, Wallet } from 'lucide-react';
+import type { BacktestResult, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,53 +12,27 @@ import { Input } from '@/components/ui/input';
 import { SelectControl, SelectOption } from '@/components/ui/select';
 import CashLedger, { type CashLedgerInput } from '@/components/CashLedger';
 import PositionLedger, { type PositionLedgerInput } from '@/components/PositionLedger';
+import PortfolioSignals, { SignalPill } from '@/components/PortfolioSignals';
+import type { PortfolioSignalRow } from '@/components/PortfolioSignals';
+import RecentMovements from '@/components/RecentMovements';
 import StrategyResearch, { type StrategyResearchInput } from '@/components/StrategyResearch';
 
 interface PortfolioWithHoldings extends Portfolio { holdings: PortfolioHolding[] }
-interface ScannedSymbol { daily: SignalResult[]; hourly: SignalResult[]; dailyCandles: Candle[]; hourlyCandles: Candle[] }
-interface ScanPayload { signals: ScannedSymbol[]; warnings: string[] }
+interface ScanPayload { signals: PortfolioSignalRow[]; warnings: string[] }
 interface AlertItem extends SignalResult { id: number; portfolioId: number }
 interface TradesPayload { trades: PortfolioTrade[]; tickers?: string[]; total: number; page: number; pageSize: number; pageCount: number }
 interface CashPayload { transactions: PortfolioCashTransaction[]; total: number; page: number; pageSize: number; pageCount: number }
 type PerformanceRange = '1y' | '6m' | '3m' | '1m' | '1w';
 const performanceRanges: Array<{ value: PerformanceRange; label: string; days: number }> = [
-  { value: '1y', label: 'Last 1y', days: 365 },
-  { value: '6m', label: 'Last 6m', days: 183 },
-  { value: '3m', label: 'Last 3m', days: 92 },
-  { value: '1m', label: 'Last 1m', days: 30 },
-  { value: '1w', label: 'Last 1w', days: 7 },
+  { value: '1y', label: '1y', days: 365 },
+  { value: '6m', label: '6m', days: 183 },
+  { value: '3m', label: '3m', days: 92 },
+  { value: '1m', label: '1m', days: 30 },
+  { value: '1w', label: '1w', days: 7 },
 ];
 const emptyPerformance: PerformanceSnapshots = { holdings: [], portfolio: [] };
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 const dateTime = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
-const sydneyDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' });
-
-function DayPriceChange({ dailyCandles, hourlyCandles }: { dailyCandles: Candle[]; hourlyCandles: Candle[] }) {
-  const latestHourly = hourlyCandles.at(-1);
-  if (!latestHourly) return <span className="day-change-empty">—</span>;
-  const latestDate = sydneyDate.format(latestHourly.timestamp);
-  const previousDaily = dailyCandles.filter((candle) => sydneyDate.format(candle.timestamp) < latestDate).at(-1);
-  if (!previousDaily || previousDaily.close <= 0) return <span className="day-change-empty">—</span>;
-  const amount = latestHourly.close - previousDaily.close;
-  const percent = amount / previousDaily.close * 100;
-  const sign = amount >= 0 ? '+' : '−';
-  const className = amount >= 0 ? 'positive' : 'negative';
-  return <span className={`day-change ${className}`} aria-label={`Day change ${sign}${money.format(Math.abs(amount))} (${sign}${Math.abs(percent).toFixed(2)}%)`}>
-    <strong>{sign}{money.format(Math.abs(amount))}</strong><small>({sign}{Math.abs(percent).toFixed(2)}%)</small>
-  </span>;
-}
-
-function LineChart({ candles }: { candles: Candle[] }) {
-  const points = useMemo(() => {
-    const closes = candles.map((candle) => candle.close);
-    const min = Math.min(...closes);
-    const max = Math.max(...closes);
-    return closes.map((close, index) => `${(index / Math.max(closes.length - 1, 1)) * 600},${100 - ((close - min) / (max - min || 1)) * 84}`).join(' ');
-  }, [candles]);
-  if (candles.length < 2) return <div className="chart-empty">Chart will appear when candle history is available.</div>;
-  return <svg className="price-chart" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="Recent price history"><defs><linearGradient id="price-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity=".22"/><stop offset="100%" stopColor="#60a5fa" stopOpacity="0"/></linearGradient></defs><polygon points={`0,100 ${points} 600,100`} fill="url(#price-fill)"/><polyline points={points} fill="none" stroke="#60a5fa" strokeWidth="2" vectorEffect="non-scaling-stroke"/></svg>;
-}
-
 function PerformanceChart({ points, rangeLabel }: { points: PerformanceSnapshots['portfolio']; rangeLabel: string }) {
   if (points.length < 2) return <div className="chart-empty">Hourly P&amp;L history will appear as new candles arrive after a trade is recorded.</div>;
   const values = points.map((point) => point.profitLoss);
@@ -105,7 +79,6 @@ export default function Dashboard() {
   const [cashTotal, setCashTotal] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshots>(emptyPerformance);
   const [performanceRange, setPerformanceRange] = useState<PerformanceRange>('1m');
-  const [symbolInput, setSymbolInput] = useState('');
   const [portfolioInput, setPortfolioInput] = useState('');
   const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
@@ -240,18 +213,17 @@ export default function Dashboard() {
     } finally { setBusy(false); }
   }
 
-  async function addHolding(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!portfolioId) return;
+  async function addHolding(symbol: string): Promise<boolean> {
+    if (!portfolioId) return false;
     setBusy(true);
     try {
-      const response = await fetch(`/api/portfolios/${portfolioId}/holdings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: symbolInput }) });
+      const response = await fetch(`/api/portfolios/${portfolioId}/holdings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol }) });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error);
-      setSymbolInput('');
       await loadPortfolios();
       await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not add ticker.'); }
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not add ticker.'); return false; }
     finally { setBusy(false); }
   }
 
@@ -342,9 +314,16 @@ export default function Dashboard() {
 
   async function removeHolding(symbol: string): Promise<void> {
     if (!portfolioId) return;
-    await fetch(`/api/portfolios/${portfolioId}/holdings?symbol=${encodeURIComponent(symbol)}`, { method: 'DELETE' });
-    await loadPortfolios();
-    await refresh();
+    if (!window.confirm(`Remove ${symbol} from this portfolio?`)) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/portfolios/${portfolioId}/holdings?symbol=${encodeURIComponent(symbol)}`, { method: 'DELETE' });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? `Could not remove ${symbol}.`);
+      await loadPortfolios();
+      await refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : `Could not remove ${symbol}.`); }
+    finally { setBusy(false); }
   }
 
   async function runSelectedBacktest(input: StrategyResearchInput): Promise<boolean> {
@@ -361,7 +340,6 @@ export default function Dashboard() {
   }
 
   const currentPortfolio = portfolios.find((portfolio) => portfolio.id === portfolioId);
-  const scanned = new Map(scan?.signals.map((row) => [row.daily[0]?.symbol ?? row.daily[1]?.symbol ?? '', row]) ?? []);
   const latestHoldingPerformance = new Map<string, HoldingPerformancePoint>();
   const holdingPerformanceHistory = new Map<string, HoldingPerformancePoint[]>();
   for (const point of performance.holdings) {
@@ -409,19 +387,8 @@ export default function Dashboard() {
         </section>
 
         <section className="overview-grid" id="portfolio">
-          <Card className="signals-card"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL MONITOR</p><CardTitle>Portfolio signals</CardTitle></div><Badge variant="success" className="live-badge"><i/>Live monitor</Badge></CardHeader>
-            <CardContent className="signals-content">
-              {currentPortfolio && <div className="watchlist-tools"><div className="holdings-chips">{currentPortfolio.holdings.map((holding) => <button key={holding.symbol} className="holding-chip" title={`Remove ${holding.symbol}`} aria-label={`Remove ${holding.symbol}`} onClick={() => void removeHolding(holding.symbol)}>{holding.symbol}<span>×</span></button>)}</div><form className="inline-form" onSubmit={(event) => void addHolding(event)}><Input aria-label="ASX ticker" placeholder="Add ASX ticker e.g. CSL" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} maxLength={20}/><Button type="submit" variant="outline" size="sm" disabled={busy || !symbolInput.trim()}><Plus className="size-4"/>Add asset</Button></form></div>}
-              <div className="table-wrap"><table><thead><tr><th>ASSET</th><th>LAST PRICE</th><th>DAILY KVO</th><th>DAILY RSI</th><th>DAILY CHANGE</th></tr></thead><tbody>{currentPortfolio?.holdings.map((holding) => {
-                const row = scanned.get(holding.symbol);
-                const klinger = row?.daily.find((item) => item.strategyId === 'klinger-oscillator');
-                const rsi = row?.daily.find((item) => item.strategyId === 'rsi-14');
-                return <tr key={holding.symbol}><td><span className="asset-symbol">{holding.symbol.replace('.AX', '')}</span><small className="asset-exchange">ASX</small></td><td className="price-cell">{klinger?.price ? money.format(klinger.price) : '—'}</td><td><SignalPill signal={klinger?.signal ?? 'HOLD'}/></td><td><SignalPill signal={rsi?.signal ?? 'HOLD'} detail={rsi?.indicators.rsi != null ? `RSI ${rsi.indicators.rsi.toFixed(0)}` : undefined}/></td><td><DayPriceChange dailyCandles={row?.dailyCandles ?? []} hourlyCandles={row?.hourlyCandles ?? []}/></td></tr>;
-              })}{currentPortfolio?.holdings.length === 0 && <tr><td colSpan={5} className="empty-row">Add tickers above to start monitoring this portfolio.</td></tr>}{!currentPortfolio && <tr><td colSpan={5} className="empty-row">Create a portfolio to begin your market scan.</td></tr>}</tbody></table></div>
-              {scan?.warnings.map((warning) => <div className="notice notice-warning" key={warning}>{warning}</div>)}<p className="panel-footnote">Signals are decision support, not trade instructions. Last checked: {lastScannedAt ? dateTime.format(lastScannedAt) : 'not yet scanned'}.</p>
-            </CardContent>
-          </Card>
-          <Card className="movement-card"><CardHeader className="section-card-header"><div><p className="section-kicker">PRICE CONTEXT</p><CardTitle>Recent movement</CardTitle></div><Badge variant="outline">1H · LAST 48 BARS</Badge></CardHeader><CardContent className="movement-content">{currentPortfolio?.holdings.slice(0, 4).map((holding) => { const row = scanned.get(holding.symbol); const latest = row?.hourlyCandles.at(-1); return <div className="watch-row" key={holding.symbol}><div className="watch-meta"><span className="asset-symbol">{holding.symbol.replace('.AX', '')}</span><small>{latest ? money.format(latest.close) : 'Waiting for data'}</small></div><LineChart candles={row?.hourlyCandles ?? []}/></div>; })}{!currentPortfolio?.holdings.length && <div className="chart-empty">Add assets to see hourly price context.</div>}<p className="chart-caption">Hourly candles add context to the daily signal.</p></CardContent></Card>
+          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={currentPortfolio?.holdings ?? []} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding}/>
+          <RecentMovements tickers={currentPortfolio?.holdings.slice(0, 4).map(({ symbol }) => symbol) ?? []} timeframe="1H · LAST 48 BARS" signals={scan?.signals ?? []}/>
         </section>
 
         <section className="performance-section" id="performance">
@@ -454,8 +421,4 @@ export default function Dashboard() {
 
     <DialogRoot open={portfolioDialogOpen} onOpenChange={setPortfolioDialogOpen}><DialogContent aria-label="Create a portfolio" className="portfolio-dialog"><p className="section-kicker">PORTFOLIO SETUP</p><DialogTitle className="dialog-title">Create a portfolio</DialogTitle><DialogDescription className="panel-description">Give this portfolio a name. You can add assets after creating it.</DialogDescription><form className="portfolio-dialog-form" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="new-portfolio-name">PORTFOLIO NAME</label><Input id="new-portfolio-name" aria-label="New portfolio name" autoFocus placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><div className="dialog-actions"><DialogClose render={<Button variant="outline" disabled={busy}/>}>Cancel</DialogClose><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></DialogContent></DialogRoot>
   </div>;
-}
-
-function SignalPill({ signal, detail, compact = false }: { signal: SignalResult['signal']; detail?: string; compact?: boolean }) {
-  return <span className={`signal-pill ${signal.toLowerCase()} ${compact ? 'compact' : ''}`}><i/>{compact ? signal : signal}{detail && <small>{detail}</small>}</span>;
 }
