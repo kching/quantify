@@ -45,6 +45,7 @@ const portfolioPerformance = sqliteTable('portfolio_performance', {
   cashBalance: real('cash_balance').notNull().default(0), marketValue: real('market_value').notNull(), totalValue: real('total_value').notNull().default(0),
   contributedCapital: real('contributed_capital').notNull().default(0), profitLoss: real('profit_loss').notNull(),
 }, (table) => [uniqueIndex('portfolio_performance_once_per_candle').on(table.portfolioId, table.timestamp)]);
+export const TIME_SERIES_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 
 const dbPath = process.env.QUANTIFY_DB_PATH ?? join(process.cwd(), 'data', 'quantify.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
@@ -225,6 +226,16 @@ export async function saveCandles(interval: CandleInterval, rows: readonly Candl
       open: sql`excluded.open`, high: sql`excluded.high`, low: sql`excluded.low`, close: sql`excluded.close`, volume: sql`excluded.volume`,
     } }).run();
   }
+}
+
+export async function evictExpiredTimeSeriesData(referenceTime = Date.now()): Promise<void> {
+  await ensureDatabase();
+  const cutoff = referenceTime - TIME_SERIES_RETENTION_MS;
+  await Promise.all([
+    db.delete(candles).where(sql`${candles.timestamp} < ${cutoff}`).run(),
+    db.delete(holdingPerformance).where(sql`${holdingPerformance.timestamp} < ${cutoff}`).run(),
+    db.delete(portfolioPerformance).where(sql`${portfolioPerformance.timestamp} < ${cutoff}`).run(),
+  ]);
 }
 
 export async function recordAlert(portfolioId: number, result: { symbol: string; strategyId: string; signal: string; timestamp: number; price: number; rationale: string; indicators: Record<string, number> }): Promise<void> {

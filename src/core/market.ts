@@ -1,5 +1,5 @@
 import { analyzeSymbol } from './engine';
-import { getCandles, listPortfolioTradeSymbols, listPortfolios, recordAlert, saveCandles } from './db';
+import { getCandles, listPortfolioTradeSymbols, listPortfolios, recordAlert, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
 import { capturePortfolioPerformance } from './performance.service';
 import { fetchYahooCandles } from './providers/yahoo.provider';
 import type { Candle, CandleInterval } from './types';
@@ -26,10 +26,11 @@ async function refreshSymbolIfStale(symbol: string, interval: CandleInterval, ke
   const freshness = interval === '1h' ? 60 * 60_000 : 24 * 60 * 60_000;
   const cooldown = interval === '1h' ? 30 * 60_000 : 8 * 60 * 60_000;
   if (cached.length && (now - cached[cached.length - 1].timestamp < freshness || now - (lastChecked.get(key) ?? 0) < cooldown)) return cached;
-  const days = cached.length ? 10 : interval === '1h' ? 700 : 1825;
+  const days = cached.length ? 10 : Math.floor(TIME_SERIES_RETENTION_MS / (24 * 60 * 60 * 1000));
   try {
     const fresh = await fetchYahooCandles(symbol, interval, days);
-    await saveCandles(interval, fresh);
+    const cutoff = now - TIME_SERIES_RETENTION_MS;
+    await saveCandles(interval, fresh.filter((candle) => candle.timestamp >= cutoff));
   } finally {
     lastChecked.set(key, now);
   }

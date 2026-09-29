@@ -70,6 +70,41 @@ describe('trade and performance persistence', () => {
     expect(performance.holdings.map((point) => point.timestamp)).not.toContain(outOfRangeTimestamp);
   });
 
+  it('evicts time-series older than 12 months while preserving ledgers and current portfolio value', async () => {
+    const portfolio = await database.createPortfolio('Time-series retention');
+    const oldTimestamp = now - 400 * 24 * HOUR;
+    const currentTimestamp = now - HOUR;
+    await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: oldTimestamp });
+    await database.recordCashTransaction({ portfolioId: portfolio.id, type: 'DEPOSIT', amount: 2_000, timestamp: oldTimestamp - HOUR, note: 'Original funding' });
+    await database.saveCandles('1h', [
+      candle('AAA.AX', oldTimestamp, 90),
+      candle('AAA.AX', currentTimestamp, 120),
+    ]);
+    await database.savePerformanceSnapshots(portfolio.id, {
+      holdings: [
+        { symbol: 'AAA.AX', timestamp: oldTimestamp, quantity: 10, marketPrice: 90, averageUnitPrice: 100.5, marketValue: 900, profitLoss: -115 },
+        { symbol: 'AAA.AX', timestamp: currentTimestamp, quantity: 10, marketPrice: 120, averageUnitPrice: 100.5, marketValue: 1_200, profitLoss: 185 },
+      ],
+      portfolio: [
+        { timestamp: oldTimestamp, cashBalance: 995, marketValue: 900, totalValue: 1_895, contributedCapital: 2_000, profitLoss: -105 },
+        { timestamp: currentTimestamp, cashBalance: 995, marketValue: 1_200, totalValue: 2_195, contributedCapital: 2_000, profitLoss: 195 },
+      ],
+    });
+
+    await database.evictExpiredTimeSeriesData(now);
+
+    expect((await database.getCandles('AAA.AX', '1h')).map((row) => row.timestamp)).toEqual([currentTimestamp]);
+    expect((await database.listPerformance(portfolio.id)).holdings.map((point) => point.timestamp)).toEqual([currentTimestamp]);
+    expect(await database.listTrades(portfolio.id)).toHaveLength(1);
+    expect(await database.listCashTransactions(portfolio.id)).toHaveLength(1);
+    expect((await database.listPortfolios()).find((row) => row.id === portfolio.id)?.holdings.map((row) => row.symbol)).toContain('AAA.AX');
+
+    await capturePortfolioPerformance(portfolio.id);
+    const performance = await database.listPerformance(portfolio.id);
+    expect(performance.holdings.at(-1)).toMatchObject({ quantity: 10, marketPrice: 120, profitLoss: 195 });
+    expect(performance.portfolio.at(-1)).toMatchObject({ cashBalance: 995, totalValue: 2_195, contributedCapital: 2_000, profitLoss: 195 });
+  });
+
   it('prevents deleting a buy that supports later sells and clears snapshots after a valid deletion', async () => {
     const portfolio = await database.createPortfolio('Trade deletion');
     const buy = await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: tradeTime });
