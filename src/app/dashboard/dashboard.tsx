@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Tabs } from '@base-ui/react/tabs';
 import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronRight, CircleHelp, LayoutDashboard, LoaderCircle, RefreshCw, Settings2, Trash2, Wallet } from 'lucide-react';
-import type { BacktestResult, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
+import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { SelectControl, SelectOption } from '@/components/ui/select';
@@ -15,24 +14,18 @@ import PositionLedger, { type PositionLedgerInput } from '@/components/PositionL
 import PortfolioSignals, { SignalPill } from '@/components/PortfolioSignals';
 import type { PortfolioSignalRow } from '@/components/PortfolioSignals';
 import RecentMovements from '@/components/RecentMovements';
-import StrategyResearch, { type StrategyResearchInput } from '@/components/StrategyResearch';
+import PortfolioPerformance, { type PerformanceRange } from '@/components/PortfolioPerformance';
 
 interface PortfolioWithHoldings extends Portfolio { holdings: PortfolioHolding[] }
 interface ScanPayload { signals: PortfolioSignalRow[]; warnings: string[] }
 interface AlertItem extends SignalResult { id: number; portfolioId: number }
 interface TradesPayload { trades: PortfolioTrade[]; tickers?: string[]; total: number; page: number; pageSize: number; pageCount: number }
 interface CashPayload { transactions: PortfolioCashTransaction[]; total: number; page: number; pageSize: number; pageCount: number }
-type PerformanceRange = '1y' | '6m' | '3m' | '1m' | '1w';
-const performanceRanges: Array<{ value: PerformanceRange; label: string; days: number }> = [
-  { value: '1y', label: '1y', days: 365 },
-  { value: '6m', label: '6m', days: 183 },
-  { value: '3m', label: '3m', days: 92 },
-  { value: '1m', label: '1m', days: 30 },
-  { value: '1w', label: '1w', days: 7 },
-];
 const emptyPerformance: PerformanceSnapshots = { holdings: [], portfolio: [] };
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 const dateTime = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
+/* Performance visualization is extracted to PortfolioPerformance. */
+/*
 function PerformanceChart({ points, rangeLabel }: { points: PerformanceSnapshots['portfolio']; rangeLabel: string }) {
   if (points.length < 2) return <div className="chart-empty">Hourly P&amp;L history will appear as new candles arrive after a trade is recorded.</div>;
   const values = points.map((point) => point.profitLoss);
@@ -61,6 +54,7 @@ function HoldingPulseChart({ symbol, points }: { symbol: string; points: Holding
     <polyline points={coords} fill="none" stroke={values.at(-1)! >= 0 ? '#34a879' : '#df7078'} strokeWidth="3" vectorEffect="non-scaling-stroke"/>
   </svg>;
 }
+*/
 
 export default function Dashboard() {
   const [portfolios, setPortfolios] = useState<PortfolioWithHoldings[]>([]);
@@ -81,7 +75,6 @@ export default function Dashboard() {
   const [performanceRange, setPerformanceRange] = useState<PerformanceRange>('1m');
   const [portfolioInput, setPortfolioInput] = useState('');
   const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false);
-  const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -326,33 +319,8 @@ export default function Dashboard() {
     finally { setBusy(false); }
   }
 
-  async function runSelectedBacktest(input: StrategyResearchInput): Promise<boolean> {
-    setBusy(true);
-    setError('');
-    try {
-      const response = await fetch(`/api/backtest?symbol=${encodeURIComponent(input.symbol)}&strategy=${input.strategy}&days=365`);
-      const body = await response.json() as { result?: BacktestResult; error?: string };
-      if (!response.ok || !body.result) throw new Error(body.error ?? 'Backtest failed.');
-      setBacktest(body.result);
-      return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Backtest failed.'); return false; }
-    finally { setBusy(false); }
-  }
-
   const currentPortfolio = portfolios.find((portfolio) => portfolio.id === portfolioId);
-  const latestHoldingPerformance = new Map<string, HoldingPerformancePoint>();
-  const holdingPerformanceHistory = new Map<string, HoldingPerformancePoint[]>();
-  for (const point of performance.holdings) {
-    latestHoldingPerformance.set(point.symbol, point);
-    const history = holdingPerformanceHistory.get(point.symbol) ?? [];
-    history.push(point);
-    holdingPerformanceHistory.set(point.symbol, history);
-  }
   const latestPortfolioPerformance = performance.portfolio.at(-1);
-  const selectedPerformanceRange = performanceRanges.find((range) => range.value === performanceRange) ?? performanceRanges[3];
-  const latestPerformanceTimestamp = latestPortfolioPerformance?.timestamp ?? 0;
-  const performanceCutoff = latestPerformanceTimestamp - selectedPerformanceRange.days * 24 * 60 * 60_000;
-  const filteredPortfolioPerformance = performance.portfolio.filter((point) => point.timestamp >= performanceCutoff);
 
   return <div className="app-shell" id="top">
     <aside className="app-sidebar">
@@ -363,7 +331,7 @@ export default function Dashboard() {
         <a className="nav-item" href="#portfolio"><BarChart3/>Portfolio signals</a>
         <a className="nav-item" href="#performance"><Activity/>P&amp;L performance</a>
         <a className="nav-item" href="#ledger"><Wallet/>Trade &amp; cash ledger</a>
-        <a className="nav-item" href="#research"><Activity/>Strategy research</a>
+        <a className="nav-item" href="/research"><Activity/>Strategy research</a>
       </nav>
       <div className="sidebar-footer"><div className="sidebar-help"><CircleHelp/><span>Decision support only<br/><small>No orders are sent</small></span></div><div className="sidebar-profile"><span className="profile-avatar">A</span><span><strong>admin</strong><small>Local workspace</small></span><Settings2 className="profile-settings"/></div></div>
     </aside>
@@ -392,17 +360,7 @@ export default function Dashboard() {
         </section>
 
         <section className="performance-section" id="performance">
-          <Tabs.Root value={performanceRange} onValueChange={(value) => setPerformanceRange(value as PerformanceRange)} className="performance-tabs">
-            <Card className="performance-card"><CardHeader className="performance-header"><div><p className="section-kicker">HOURLY PERFORMANCE</p><CardTitle>Portfolio profit &amp; loss</CardTitle><CardDescription>Track portfolio performance without deposits masking trading returns.</CardDescription></div><Tabs.List className="timeframe-tabs" aria-label="Portfolio P&L timeframe">{performanceRanges.map((range) => <Tabs.Tab key={range.value} value={range.value} className="timeframe-tab">{range.label}</Tabs.Tab>)}</Tabs.List></CardHeader>
-              <Tabs.Panel value={performanceRange} className="performance-panel-content"><CardContent className="performance-content">
-                <div className="performance-metrics"><div className="performance-total"><small>CASH BALANCE</small><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.cashBalance) : '—'}</strong></div><div className="performance-total"><small>REALIZED + UNREALIZED · NET BROKERAGE</small><strong className={latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? 'positive' : 'negative'}>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.profitLoss) : '—'}</strong></div></div>
-                <PerformanceChart points={filteredPortfolioPerformance} rangeLabel={selectedPerformanceRange.label}/>
-                {filteredPortfolioPerformance.length > 1 && <div className="chart-axis-labels"><span>{dateTime.format(filteredPortfolioPerformance[0].timestamp)}</span><span>{dateTime.format(filteredPortfolioPerformance.at(-1)!.timestamp)}</span></div>}
-                <p className="chart-caption">{selectedPerformanceRange.label} · Each point is captured from cached hourly candle closes.</p>
-                <div className="holding-performance"><div className="holding-heading"><div><p className="section-kicker">POSITIONS</p><h3>HOLDING PERFORMANCE</h3></div><span>{latestHoldingPerformance.size} assets</span></div>{latestHoldingPerformance.size ? <div className="holding-table-wrap"><div className="holding-performance-head"><span>ASSET</span><span>UNITS</span><span>AVG COST / UNIT</span><span>MARKET VALUE</span><span>P&amp;L</span><span>TREND</span></div>{[...latestHoldingPerformance.values()].sort((left, right) => left.symbol.localeCompare(right.symbol)).map((point) => <div className="holding-performance-row" key={point.symbol}><strong>{point.symbol}</strong><span>{point.quantity}</span><span>{money.format(point.averageUnitPrice)}</span><span>{money.format(point.marketValue)}</span><strong className={point.profitLoss >= 0 ? 'positive' : 'negative'}>{money.format(point.profitLoss)}</strong><HoldingPulseChart symbol={point.symbol} points={(holdingPerformanceHistory.get(point.symbol) ?? []).filter((historyPoint) => historyPoint.timestamp >= performanceCutoff)}/></div>)}</div> : <div className="chart-empty">Add a trade to see per-holding P&amp;L.</div>}</div>
-              </CardContent></Tabs.Panel>
-            </Card>
-          </Tabs.Root>
+          <PortfolioPerformance performance={performance} range={performanceRange} onRangeChange={setPerformanceRange}/>
         </section>
 
         <section className="ledger-grid" id="ledger">
@@ -414,7 +372,6 @@ export default function Dashboard() {
           <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol.replace('.AX', '')}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
         </section>
 
-        <StrategyResearch result={backtest} busy={busy} onRun={runSelectedBacktest}/>
         <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span><span>Local only · Candles stored on this device</span></footer>
       </div>
     </main>
