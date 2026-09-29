@@ -17,6 +17,7 @@ import RecentMovements from '@/components/RecentMovements';
 import PortfolioPerformance, { type PerformanceRange } from '@/components/PortfolioPerformance';
 import AppSidebar from '@/components/AppSidebar';
 
+type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 interface PortfolioWithHoldings extends Portfolio { holdings: PortfolioHolding[] }
 interface ScanPayload { signals: PortfolioSignalRow[]; warnings: string[] }
 interface AlertItem extends SignalResult { id: number; portfolioId: number }
@@ -80,6 +81,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const loadPortfolios = useCallback(async (selectFirst = false): Promise<void> => {
     const response = await fetch('/api/portfolios');
     const body = await response.json() as { portfolios: PortfolioWithHoldings[] };
@@ -175,8 +177,13 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [portfolioId, refresh]);
   useEffect(() => {
-    if (typeof window.EventSource === 'undefined') return;
+    if (typeof window.EventSource === 'undefined') {
+      const timer = window.setTimeout(() => setConnectionStatus('disconnected'), 0);
+      return () => window.clearTimeout(timer);
+    }
     const eventSource = new EventSource('/api/market-updates');
+    eventSource.onopen = () => setConnectionStatus('connected');
+    eventSource.onerror = () => setConnectionStatus('disconnected');
     eventSource.onmessage = () => { void refresh(); };
     return () => eventSource.close();
   }, [refresh]);
@@ -336,9 +343,8 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       <header className="app-header">
         <div/>
         <div className="header-actions">
-          <Badge variant="outline" className="market-badge"><i/>ASX <span>·</span> AUSTRALIA</Badge>
-          <span className="header-divider"/>
-          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading || !portfolioId}>{loading ? <LoaderCircle className="size-4 animate-spin"/> : <RefreshCw className="size-4"/>}{loading ? 'Scanning…' : 'Refresh data'}</Button>
+          <span className={`connection-status connection-status-${connectionStatus}`} role="status" aria-live="polite"><i aria-hidden="true"/>{connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'connecting' ? 'Connecting' : 'Disconnected'}</span>
+          <Button variant="outline" size="icon" className="refresh-button rounded-full" onClick={() => void refresh()} disabled={loading || !portfolioId} aria-label={loading ? 'Scanning…' : 'Refresh data'} title={loading ? 'Scanning…' : 'Refresh data'}>{loading ? <LoaderCircle className="size-4 animate-spin"/> : <RefreshCw className="size-4"/>}</Button>
         </div>
       </header>
 

@@ -134,6 +134,10 @@ button:disabled { cursor: not-allowed; }
 .market-badge { gap: 7px; padding: 6px 9px; color: #536177; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
 .market-badge i, .live-badge i { width: 6px; height: 6px; border-radius: 50%; background: #21a879; box-shadow: 0 0 0 3px #21a87920; }
 .market-badge span { color: #c4cad3; }
+.connection-status { display: inline-flex; align-items: center; gap: 7px; color: #536177; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
+.connection-status i { width: 6px; height: 6px; border-radius: 50%; background: #f0a33a; box-shadow: 0 0 0 3px #f0a33a20; }
+.connection-status-connected i { background: #21a879; box-shadow: 0 0 0 3px #21a87920; }
+.connection-status-disconnected i { background: #c45762; box-shadow: 0 0 0 3px #c4576220; }
 .header-divider { height: 19px; border-left: 1px solid var(--border); }
 .cycle-label { color: #8a94a5; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
 .dashboard-content { width: min(100%, 1550px); margin: 0 auto; padding: 33px clamp(22px, 3vw, 48px) 26px; }
@@ -173,6 +177,7 @@ button:disabled { cursor: not-allowed; }
 .watchlist-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 0 12px; border-top: 1px solid #edf0f4; }
 .inline-form { display: flex; min-width: min(100%, 260px); gap: 6px; }
 .inline-form input { height: 32px; font-size: 12px; }
+.inline-form .add-asset-button { width: 32px; height: 32px; }
 .table-wrap, .holding-table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
 thead { background: #f8fafc; }
