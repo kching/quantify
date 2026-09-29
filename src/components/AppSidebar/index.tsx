@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
-import { Activity, BarChart3, CircleHelp, LayoutDashboard, Wallet } from 'lucide-react';
+import { Activity, BarChart3, CircleHelp, LayoutDashboard, Wallet, Microscope } from 'lucide-react';
 import Link from 'next/link';
 import {
   Sidebar,
@@ -52,10 +52,10 @@ export default function AppSidebar({ page }: { page: AppPage }): React.JSX.Eleme
         <SidebarGroupLabel>WORKSPACE</SidebarGroupLabel>
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton href="/#overview" title="Overview" ariaLabel="Overview" isActive={dashboardActive && section === 'overview'}><LayoutDashboard/><span className="sidebar-menu-label">Overview</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/#portfolio" title="Portfolio signals" ariaLabel="Portfolio signals" isActive={dashboardActive && section === 'portfolio'}><BarChart3/><span className="sidebar-menu-label">Portfolio signals</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/#performance" title="P&L performance" ariaLabel="P&L performance" isActive={dashboardActive && section === 'performance'}><Activity/><span className="sidebar-menu-label">P&amp;L performance</span></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton href="/#portfolio" title="Portfolio signals" ariaLabel="Portfolio signals" isActive={dashboardActive && section === 'portfolio'}><Activity/><span className="sidebar-menu-label">Portfolio signals</span></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton href="/#performance" title="P&L performance" ariaLabel="P&L performance" isActive={dashboardActive && section === 'performance'}><BarChart3/><span className="sidebar-menu-label">P&amp;L performance</span></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton href="/#ledger" title="Trade & cash ledger" ariaLabel="Trade & cash ledger" isActive={dashboardActive && section === 'ledger'}><Wallet/><span className="sidebar-menu-label">Trade &amp; cash ledger</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/research" title="Strategy research" ariaLabel="Strategy research" isActive={page === 'research'}><Activity/><span className="sidebar-menu-label">Strategy research</span></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton href="/research" title="Strategy research" ariaLabel="Strategy research" isActive={page === 'research'}><Microscope/><span className="sidebar-menu-label">Strategy research</span></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
     </SidebarContent>

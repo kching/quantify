@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 export type PerformanceRange = '1y' | '6m' | '3m' | '1m' | '1w';
 interface Props { performance: PerformanceSnapshots; range: PerformanceRange; onRangeChange: (range: PerformanceRange) => void }
-const ranges: Array<{ value: PerformanceRange; label: string; days: number }> = [{ value: '1y', label: 'Last 1y', days: 365 }, { value: '6m', label: 'Last 6m', days: 183 }, { value: '3m', label: 'Last 3m', days: 92 }, { value: '1m', label: 'Last 1m', days: 30 }, { value: '1w', label: 'Last 1w', days: 7 }];
+const ranges: Array<{ value: PerformanceRange; label: string; days: number }> = [{ value: '1y', label: '1Y', days: 365 }, { value: '6m', label: '6M', days: 183 }, { value: '3m', label: '3M', days: 92 }, { value: '1m', label: '1M', days: 30 }, { value: '1w', label: '1W', days: 7 }];
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 const dateTime = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
 
