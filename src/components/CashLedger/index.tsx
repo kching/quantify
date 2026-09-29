@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import {ChevronLeft, ChevronRight, LoaderCircle, Plus, Trash2} from 'lucide-react';
 import type { CashTransactionType, PortfolioCashTransaction } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,7 +63,7 @@ export default function Index({ portfolioId, transactions, page, pageCount, tota
           </div>
         </div>
         <div className="cash-form-actions">
-          <Button type="submit" variant="default" disabled={busy || !portfolioId || !amount}>{busy ? 'Saving…' : 'Save cash entry'}</Button>
+          <Button type="submit" variant="default" disabled={busy || !portfolioId || !amount}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : <Plus className="size-4"/>}{busy ? 'Saving…' : 'Save cash entry'}</Button>
         </div>
       </div>
     </form>
