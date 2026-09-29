@@ -99,6 +99,10 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     setPortfolios(body.portfolios);
     if (selectFirst) {
       setPortfolioId(body.portfolios[0]?.id ?? null);
+      setPerformance(emptyPerformance);
+      setScan(null);
+      setAlerts([]);
+      setLastScannedAt(null);
       setTradePage(1);
       setTradeFilter('');
       setCashPage(1);
@@ -152,7 +156,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       const scanBody = await scanResponse.json() as ScanPayload & { error?: string };
       const alertBody = await alertResponse.json() as { alerts: AlertItem[] };
       if (!scanResponse.ok) throw new Error(scanBody.error ?? 'Market scan failed.');
-      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`);
+      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`, { cache: 'no-store' });
       const performanceBody = await performanceResponse.json() as PerformanceSnapshots;
       setScan(scanBody);
       setAlerts(alertBody.alerts);
@@ -212,6 +216,10 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       await loadPortfolios();
       if (body.portfolio) {
         setPortfolioId(body.portfolio.id);
+        setPerformance(emptyPerformance);
+        setScan(null);
+        setAlerts([]);
+        setLastScannedAt(null);
         setTradePage(1);
         setTradeFilter('');
       }
@@ -293,7 +301,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Could not delete this trade.');
       await loadTradePage();
-      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`);
+      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`, { cache: 'no-store' });
       const performanceBody = await performanceResponse.json() as PerformanceSnapshots;
       if (!performanceResponse.ok) throw new Error('Trade was deleted, but performance could not be refreshed.');
       setPerformance(performanceBody);
@@ -334,7 +342,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Could not delete this cash entry.');
       await loadCashPage(cashPage);
-      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`);
+      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`, { cache: 'no-store' });
       const performanceBody = await performanceResponse.json() as PerformanceSnapshots;
       if (!performanceResponse.ok) throw new Error('Cash entry was deleted, but performance could not be refreshed.');
       setPerformance(performanceBody);
@@ -374,7 +382,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
 
       <div className="dashboard-content">
         <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the market, refreshed against your portfolio.</p></div>
-          <div className="portfolio-picker"><label htmlFor="portfolio-picker">ACTIVE PORTFOLIO</label><SelectControl id="portfolio-picker" value={portfolioId === null ? '' : String(portfolioId)} displayValue={currentPortfolio?.name} ariaLabel="PORTFOLIO" placeholder="Select a portfolio" className="portfolio-select" onValueChange={(value) => { if (value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(value) || null); setTradePage(1); setTradeFilter(''); } }}>
+          <div className="portfolio-picker"><label htmlFor="portfolio-picker">ACTIVE PORTFOLIO</label><SelectControl id="portfolio-picker" value={portfolioId === null ? '' : String(portfolioId)} displayValue={currentPortfolio?.name} ariaLabel="PORTFOLIO" placeholder="Select a portfolio" className="portfolio-select" onValueChange={(value) => { if (value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(value) || null); setPerformance(emptyPerformance); setScan(null); setAlerts([]); setLastScannedAt(null); setTradePage(1); setTradeFilter(''); } }}>
             {portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}<SelectOption value="new">＋ New portfolio…</SelectOption>
           </SelectControl><Button variant="ghost" size="icon" className="delete-portfolio" aria-label="Delete portfolio" title="Delete portfolio" disabled={!portfolioId || busy} onClick={() => void deletePortfolio()}><Trash2 className="size-4"/></Button></div>
         </section>

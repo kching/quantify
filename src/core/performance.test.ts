@@ -42,6 +42,16 @@ describe('calculatePerformanceSnapshots', () => {
     expect(result.holdings[0].quantity).toBe(10);
   });
 
+  it('values a new trade against the latest available candle when calculating current performance', () => {
+    const asOf = 3 * HOUR;
+    const trade = { ...trades[0], timestamp: asOf - 1 };
+    const result = calculatePerformanceSnapshots([trade], new Map([
+      ['AAA.AX', candles('AAA.AX', [[HOUR, 110]])],
+    ]), [], asOf);
+
+    expect(result.holdings).toEqual([{ symbol: 'AAA.AX', timestamp: asOf, quantity: 10, marketPrice: 110, averageUnitPrice: 100.5, marketValue: 1_100, profitLoss: 95 }]);
+  });
+
   it('includes deposits and withdrawals in cash and total value without treating them as P&L', () => {
     const cashTransactions: PortfolioCashTransaction[] = [
       { id: 1, portfolioId: 1, type: 'DEPOSIT', amount: 2_000, timestamp: 0, note: 'Starting funds' },

@@ -57,6 +57,7 @@ export default function Index({ portfolioId, symbols, trades, tickers, filter, p
     const timestamp = tradeTime ? new Date(tradeTime).getTime() : 0;
     const saved = await onSubmit({ symbol, side, quantity: Number(quantity), price: Number(price), brokerage: calculatedBrokerage, timestamp });
     if (!saved) return;
+    setSymbol('');
     setQuantity('');
     setPrice('');
     setTradeTime(localDateTimeValue());
@@ -66,7 +67,7 @@ export default function Index({ portfolioId, symbols, trades, tickers, filter, p
     <form className="trade-form" onSubmit={(event) => void submitTrade(event)}>
       <div className="trade-form-row">
         <label>TYPE<SelectControl value={side} displayValue={side === 'BUY' ? 'Buy' : 'Sell'} ariaLabel="Trade side" onValueChange={(value) => setSide(value as TradeSide)}><SelectOption value="BUY">Buy</SelectOption><SelectOption value="SELL">Sell</SelectOption></SelectControl></label>
-        <label>TICKER<Input aria-label="Trade ticker" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} placeholder="e.g. QQQ or MQG.AX" list="portfolio-tickers" required maxLength={20}/><datalist id="portfolio-tickers">{symbols.map((ticker) => <option key={ticker} value={ticker}/>)}</datalist></label>
+        <label>TICKER<Input aria-label="Trade ticker" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} placeholder="e.g. MQG.AX" list="portfolio-tickers" required maxLength={20}/><datalist id="portfolio-tickers">{symbols.map((ticker) => <option key={ticker} value={ticker}/>)}</datalist></label>
       </div>
       <div className="trade-form-row">
         <label>UNITS<Input aria-label="Trade units" type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} required/></label>

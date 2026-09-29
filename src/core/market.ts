@@ -37,6 +37,14 @@ async function refreshSymbolIfStale(symbol: string, interval: CandleInterval, ke
   return getCandles(symbol, interval);
 }
 
+export async function refreshPortfolioSymbol(portfolioId: number, symbol: string): Promise<void> {
+  const now = Date.now();
+  const fresh = await fetchYahooCandles(symbol, '1h', 10);
+  const cutoff = now - TIME_SERIES_RETENTION_MS;
+  await saveCandles('1h', fresh.filter((candle) => candle.timestamp >= cutoff));
+  await capturePortfolioPerformance(portfolioId);
+}
+
 interface SymbolScan {
   daily: ReturnType<typeof analyzeSymbol>;
   hourly: ReturnType<typeof analyzeSymbol>;

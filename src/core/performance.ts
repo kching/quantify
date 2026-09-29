@@ -10,6 +10,7 @@ export function calculatePerformanceSnapshots(
   trades: readonly PortfolioTrade[],
   candlesBySymbol: ReadonlyMap<string, readonly Candle[]>,
   cashTransactions: readonly PortfolioCashTransaction[] = [],
+  asOfTimestamp?: number,
 ): PerformanceSnapshots {
   const tradesBySymbol = new Map<string, PortfolioTrade[]>();
   for (const trade of trades) {
@@ -29,8 +30,11 @@ export function calculatePerformanceSnapshots(
     let costBasis = 0;
     let cashFlow = 0;
 
-    for (const candle of orderedCandles) {
-      const closeTimestamp = candle.timestamp + HOUR_MS;
+    for (const [candleIndex, candle] of orderedCandles.entries()) {
+      const isLatestCurrentCandle = asOfTimestamp != null && candleIndex === orderedCandles.length - 1;
+      const closeTimestamp = isLatestCurrentCandle
+        ? asOfTimestamp
+        : asOfTimestamp == null ? candle.timestamp + HOUR_MS : Math.min(candle.timestamp + HOUR_MS, asOfTimestamp);
       while (tradeIndex < orderedTrades.length && orderedTrades[tradeIndex].timestamp <= closeTimestamp) {
         const trade = orderedTrades[tradeIndex];
         if (trade.side === 'BUY') {

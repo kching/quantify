@@ -1,5 +1,5 @@
 import { deletePortfolioTrade, listPortfolios } from '@/core/db';
-import { capturePortfolioPerformance } from '@/core/performance.service';
+import { publishMarketUpdate } from '@/core/market-update-events';
 import { getCurrentUser } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,19 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   if (!(await listPortfolios(user.id)).some((portfolio) => portfolio.id === portfolioId)) return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
   try {
     const trade = user.id === 'admin' ? await deletePortfolioTrade(portfolioId, tradeId) : await deletePortfolioTrade(portfolioId, tradeId, user.id);
-    await capturePortfolioPerformance(portfolioId);
+    try {
+      const { refreshPortfolioSymbol } = await import('@/core/market');
+      await refreshPortfolioSymbol(portfolioId, trade.symbol);
+    } catch (refreshError) {
+      console.warn(`[quantify] Immediate ${trade.symbol} refresh failed after deleting trade.`, refreshError);
+      try {
+        const { capturePortfolioPerformance } = await import('@/core/performance.service');
+        await capturePortfolioPerformance(portfolioId);
+      } catch (performanceError) {
+        console.error(`[quantify] Performance snapshot rebuild failed after deleting ${trade.symbol} trade.`, performanceError);
+      }
+    }
+    publishMarketUpdate({ completedAt: Date.now() });
     return Response.json({ ok: true, trade });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Unable to delete this trade.';

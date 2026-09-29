@@ -1,5 +1,6 @@
 import { listPortfolios, listTradePage, recordTrade } from '@/core/db';
 import { calculateBrokerage } from '@/core/brokerage';
+import { publishMarketUpdate } from '@/core/market-update-events';
 import type { TradeSide } from '@/core/types';
 import { getCurrentUser } from '@/lib/current-user';
 
@@ -41,6 +42,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const input = { portfolioId, symbol, side: side as TradeSide, quantity, price, brokerage: calculateBrokerage(quantity * price), timestamp };
     const trade = user.id === 'admin' ? await recordTrade(input) : await recordTrade(input, user.id);
+    try {
+      const { refreshPortfolioSymbol } = await import('@/core/market');
+      await refreshPortfolioSymbol(portfolioId, symbol);
+    } catch (refreshError) {
+      console.warn(`[quantify] Immediate ${symbol} refresh failed after recording trade.`, refreshError);
+      try {
+        const { capturePortfolioPerformance } = await import('@/core/performance.service');
+        await capturePortfolioPerformance(portfolioId);
+      } catch (performanceError) {
+        console.error(`[quantify] Performance snapshot rebuild failed after recording ${symbol} trade.`, performanceError);
+      }
+    }
+    publishMarketUpdate({ completedAt: Date.now() });
     return Response.json({ trade }, { status: 201 });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Unable to record this trade.';
