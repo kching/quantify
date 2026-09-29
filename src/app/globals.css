@@ -124,15 +124,12 @@ button:disabled { cursor: not-allowed; }
 .live-badge { gap: 8px; border-color: #d9eee5; background: #f2fbf6; color: #31815f; font-size: 9px; }
 .signals-content { padding: 0 20px 14px; }
 .watchlist-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 0 12px; border-top: 1px solid #edf0f4; }
-.holdings-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.holding-chip { display: inline-flex; align-items: center; gap: 6px; height: 25px; padding: 0 7px 0 9px; border: 1px solid #e6eaf0; border-radius: 6px; background: #f8fafc; color: #556275; font-size: 9px; font-weight: 650; }
-.holding-chip span { color: #99a2b0; font-size: 13px; line-height: 1; }
-.holding-chip:hover { border-color: #efc6cc; color: #b34253; }
 .inline-form { display: flex; min-width: min(100%, 260px); gap: 6px; }
 .inline-form input { height: 32px; font-size: 10px; }
 .table-wrap, .holding-table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
 thead { background: #f8fafc; }
+.signals-card th:last-child, .signals-card td:last-child { width: 38px; padding-right: 6px; text-align: right; }
 th { height: 33px; padding: 0 10px; color: #8995a6; font-size: 8px; font-weight: 750; letter-spacing: .65px; }
 td { height: 53px; padding: 0 10px; border-top: 1px solid #eef1f5; color: #536174; font-size: 10px; }
 td:first-child, th:first-child { padding-left: 11px; }
@@ -194,6 +191,7 @@ td:first-child, th:first-child { padding-left: 11px; }
 .holding-pulse-empty { color: #a2aab6; }
 .ledger-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); align-items: start; gap: 14px; margin-top: 15px; }
 .trade-panel > .section-card-header, .cash-panel > .section-card-header, .alerts-panel > .section-card-header, .backtest-panel > .section-card-header { padding-bottom: 16px; }
+.ledger-grid > .trade-panel > .section-card-header, .ledger-grid > .cash-panel > .section-card-header { min-height: 147px; align-items: flex-start; padding: 16px; }
 .trade-panel > .p-6, .cash-panel > .p-6, .alerts-panel > .p-6, .backtest-panel > .p-6 { padding-top: 0; }
 .trade-form, .cash-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .trade-form label, .cash-form label, .portfolio-dialog-form label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: #7f8b9d; font-size: 8px; font-weight: 750; letter-spacing: .65px; }
