@@ -14,6 +14,14 @@
         flex: 1 1 0;
     }
 
+    .cash-form-row:first-child {
+        width: min(100%, 480px);
+    }
+
+    .cash-form-row:first-child > label:first-child {
+        flex: 0 0 180px;
+    }
+
     .cash-form label {
         display: flex;
         min-width: 0;
