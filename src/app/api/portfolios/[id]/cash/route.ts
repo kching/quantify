@@ -1,13 +1,16 @@
-import { listCashTransactions, listPortfolios, recordCashTransaction } from '@/core/db';
+import { listCashTransactionPage, listPortfolios, recordCashTransaction } from '@/core/db';
 import type { CashTransactionType } from '@/core/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   const id = Number((await context.params).id);
   if (!Number.isSafeInteger(id) || id < 1) return Response.json({ error: 'Invalid portfolio.' }, { status: 400 });
   if (!(await listPortfolios()).some((portfolio) => portfolio.id === id)) return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
-  return Response.json({ transactions: await listCashTransactions(id) });
+  const params = new URL(request.url).searchParams;
+  const page = params.has('page') ? Number(params.get('page')) : 1;
+  if (!Number.isSafeInteger(page) || page < 1) return Response.json({ error: 'Enter a valid page.' }, { status: 400 });
+  return Response.json(await listCashTransactionPage(id, page));
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {

@@ -156,12 +156,45 @@ export async function listCashTransactions(portfolioId: number): Promise<Portfol
   return db.select().from(cashTransactions).where(eq(cashTransactions.portfolioId, portfolioId)).orderBy(cashTransactions.timestamp, cashTransactions.id).all() as Promise<PortfolioCashTransaction[]>;
 }
 
+export interface PortfolioCashTransactionPage {
+  transactions: PortfolioCashTransaction[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+export async function listCashTransactionPage(portfolioId: number, requestedPage: number): Promise<PortfolioCashTransactionPage> {
+  await ensureDatabase();
+  const pageSize = 6;
+  const where = eq(cashTransactions.portfolioId, portfolioId);
+  const countRow = await db.select({ count: sql<number>`count(*)` }).from(cashTransactions).where(where).get();
+  const total = Number(countRow?.count ?? 0);
+  const pageCount = Math.ceil(total / pageSize);
+  const page = Math.min(Math.max(1, requestedPage), Math.max(1, pageCount));
+  const rows = total
+    ? await db.select().from(cashTransactions).where(where).orderBy(desc(cashTransactions.timestamp), desc(cashTransactions.id)).limit(pageSize).offset((page - 1) * pageSize).all()
+    : [];
+  return { transactions: rows as PortfolioCashTransaction[], total, page, pageSize, pageCount };
+}
+
 export async function recordCashTransaction(input: Omit<PortfolioCashTransaction, 'id'>): Promise<PortfolioCashTransaction> {
   await ensureDatabase();
   const portfolio = await db.select({ id: portfolios.id }).from(portfolios)
     .where(and(eq(portfolios.id, input.portfolioId), eq(portfolios.userId, 'admin'))).get();
   if (!portfolio) throw new Error('Portfolio not found.');
   return db.insert(cashTransactions).values(input).returning().get() as Promise<PortfolioCashTransaction>;
+}
+
+export async function deleteCashTransaction(portfolioId: number, transactionId: number): Promise<PortfolioCashTransaction> {
+  await ensureDatabase();
+  const transaction = await db.select().from(cashTransactions)
+    .where(and(eq(cashTransactions.portfolioId, portfolioId), eq(cashTransactions.id, transactionId))).get();
+  if (!transaction) throw new Error('Cash transaction not found.');
+  await db.delete(cashTransactions).where(and(eq(cashTransactions.portfolioId, portfolioId), eq(cashTransactions.id, transactionId))).run();
+  await db.delete(holdingPerformance).where(eq(holdingPerformance.portfolioId, portfolioId)).run();
+  await db.delete(portfolioPerformance).where(eq(portfolioPerformance.portfolioId, portfolioId)).run();
+  return transaction as PortfolioCashTransaction;
 }
 
 export async function recordTrade(input: Omit<PortfolioTrade, 'id'>): Promise<PortfolioTrade> {

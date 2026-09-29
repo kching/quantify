@@ -58,11 +58,24 @@ const deletePortfolioTrade = mock(async (portfolioId: number, tradeId: number) =
   return recordedTrades.splice(index, 1)[0];
 });
 const capturePortfolioPerformance = mock(async () => undefined);
-const listCashTransactions = mock(async () => recordedCashTransactions);
+const listCashTransactionPage = mock(async (portfolioId: number, page: number) => {
+  const matches = recordedCashTransactions.filter((transaction) => transaction.portfolioId === portfolioId);
+  const total = matches.length;
+  const pageSize = 6;
+  const pageCount = Math.ceil(total / pageSize);
+  const safePage = Math.min(page, Math.max(pageCount, 1));
+  const ordered = [...matches].sort((left, right) => Number(right.timestamp) - Number(left.timestamp) || Number(right.id) - Number(left.id));
+  return { transactions: ordered.slice((safePage - 1) * pageSize, safePage * pageSize), total, page: safePage, pageSize, pageCount };
+});
 const recordCashTransaction = mock(async (transaction: Record<string, unknown>) => {
   const created = { id: recordedCashTransactions.length + 1, ...transaction };
   recordedCashTransactions.push(created);
   return created;
+});
+const deleteCashTransaction = mock(async (portfolioId: number, transactionId: number) => {
+  const index = recordedCashTransactions.findIndex((transaction) => transaction.portfolioId === portfolioId && transaction.id === transactionId);
+  if (index < 0) throw new Error('Cash transaction not found.');
+  return recordedCashTransactions.splice(index, 1)[0];
 });
 const listPerformance = mock(async () => ({ holdings: [], portfolio: [] }));
 const listPortfolioTradeSymbols = mock(async () => [] as string[]);
@@ -74,7 +87,7 @@ const fetchYahooCandles = mock(async () => [] as Candle[]);
 mock.module('@/core/db', () => ({
   listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding,
   getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, listPerformance,
-  listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction,
+  listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction,
 }));
 mock.module('@/core/market', () => ({ scanPortfolio }));
 mock.module('@/core/performance.service', () => ({ capturePortfolioPerformance }));
@@ -93,6 +106,7 @@ const backtestRoute = await import('./backtest/route');
 const tradesRoute = await import('./portfolios/[id]/trades/route');
 const performanceRoute = await import('./portfolios/[id]/performance/route');
 const cashRoute = await import('./portfolios/[id]/cash/route');
+const cashItemRoute = await import('./portfolios/[id]/cash/[transactionId]/route');
 const tradeItemRoute = await import('./portfolios/[id]/trades/[tradeId]/route');
 
 function request(url: string, method = 'GET', body?: unknown): Request {
@@ -117,7 +131,7 @@ describe('API route handlers', () => {
     candles = [];
     recordedTrades = [];
     recordedCashTransactions = [];
-    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, capturePortfolioPerformance, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactions, recordCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
+    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, capturePortfolioPerformance, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
   });
 
   describe('/api/portfolios', () => {
@@ -239,11 +253,21 @@ describe('API route handlers', () => {
     const getResponse = await cashRoute.GET(request('/api/portfolios/1/cash'), context('1'));
     expect(getResponse.status).toBe(200);
     expect((await payload(getResponse)).transactions).toEqual([]);
+    expect(listCashTransactionPage).toHaveBeenCalledWith(1, 1);
 
     expect((await cashRoute.POST(request('/api/portfolios/1/cash', 'POST', { type: 'DEPOSIT', amount: -5, timestamp: 2 }), context('1'))).status).toBe(400);
     const response = await cashRoute.POST(request('/api/portfolios/1/cash', 'POST', { type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' }), context('1'));
     expect(response.status).toBe(201);
     expect(recordCashTransaction).toHaveBeenCalledWith({ portfolioId: 1, type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' });
+  });
+
+  it('/api/portfolios/[id]/cash/[transactionId] deletes a cash movement and rebuilds performance', async () => {
+    recordedCashTransactions = [{ id: 8, portfolioId: 1, type: 'DEPOSIT', amount: 500, timestamp: 2, note: '' }];
+    const response = await cashItemRoute.DELETE(request('/api/portfolios/1/cash/8', 'DELETE'), { params: Promise.resolve({ id: '1', transactionId: '8' }) });
+    expect(response.status).toBe(200);
+    expect((await payload(response)).ok).toBe(true);
+    expect(deleteCashTransaction).toHaveBeenCalledWith(1, 8);
+    expect(capturePortfolioPerformance).toHaveBeenCalledWith(1);
   });
 
   it('only scans an existing portfolio and returns scan errors as 500', async () => {

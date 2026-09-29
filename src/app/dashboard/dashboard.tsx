@@ -1,14 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { BacktestResult, Candle, CashTransactionType, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult, TradeSide } from '@/core/types';
+import { Tabs } from '@base-ui/react/tabs';
+import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronRight, CircleHelp, LayoutDashboard, LoaderCircle, Plus, RefreshCw, Settings2, Trash2, Wallet } from 'lucide-react';
+import type { BacktestResult, Candle, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult } from '@/core/types';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { SelectControl, SelectOption } from '@/components/ui/select';
+import CashLedger, { type CashLedgerInput } from '@/components/CashLedger';
+import PositionLedger, { type PositionLedgerInput } from '@/components/PositionLedger';
+import StrategyResearch, { type StrategyResearchInput } from '@/components/StrategyResearch';
 
 interface PortfolioWithHoldings extends Portfolio { holdings: PortfolioHolding[] }
 interface ScannedSymbol { daily: SignalResult[]; hourly: SignalResult[]; dailyCandles: Candle[]; hourlyCandles: Candle[] }
 interface ScanPayload { signals: ScannedSymbol[]; warnings: string[] }
 interface AlertItem extends SignalResult { id: number; portfolioId: number }
 interface TradesPayload { trades: PortfolioTrade[]; tickers?: string[]; total: number; page: number; pageSize: number; pageCount: number }
-interface CashPayload { transactions: PortfolioCashTransaction[] }
+interface CashPayload { transactions: PortfolioCashTransaction[]; total: number; page: number; pageSize: number; pageCount: number }
 type PerformanceRange = '1y' | '6m' | '3m' | '1m' | '1w';
 const performanceRanges: Array<{ value: PerformanceRange; label: string; days: number }> = [
   { value: '1y', label: 'Last 1y', days: 365 },
@@ -89,24 +100,15 @@ export default function Dashboard() {
   const [tradePageCount, setTradePageCount] = useState(0);
   const [tradeTotal, setTradeTotal] = useState(0);
   const [cashTransactions, setCashTransactions] = useState<PortfolioCashTransaction[]>([]);
+  const [cashPage, setCashPage] = useState(1);
+  const [cashPageCount, setCashPageCount] = useState(0);
+  const [cashTotal, setCashTotal] = useState(0);
   const [performance, setPerformance] = useState<PerformanceSnapshots>(emptyPerformance);
   const [performanceRange, setPerformanceRange] = useState<PerformanceRange>('1m');
   const [symbolInput, setSymbolInput] = useState('');
   const [portfolioInput, setPortfolioInput] = useState('');
   const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
-  const [backtestSymbol, setBacktestSymbol] = useState('MQG.AX');
-  const [backtestStrategy, setBacktestStrategy] = useState('klinger-oscillator');
-  const [tradeSymbol, setTradeSymbol] = useState('');
-  const [tradeSide, setTradeSide] = useState<TradeSide>('BUY');
-  const [tradeQuantity, setTradeQuantity] = useState('');
-  const [tradePrice, setTradePrice] = useState('');
-  const [tradeBrokerage, setTradeBrokerage] = useState('');
-  const [tradeTime, setTradeTime] = useState('');
-  const [cashType, setCashType] = useState<CashTransactionType>('DEPOSIT');
-  const [cashAmount, setCashAmount] = useState('');
-  const [cashNote, setCashNote] = useState('');
-  const [cashTime, setCashTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -120,6 +122,7 @@ export default function Dashboard() {
       setPortfolioId(body.portfolios[0]?.id ?? null);
       setTradePage(1);
       setTradeFilter('');
+      setCashPage(1);
     }
   }, []);
 
@@ -143,24 +146,37 @@ export default function Dashboard() {
     setTradePage(body.page);
   }, [portfolioId, tradeFilter, tradePage]);
 
+  const loadCashPage = useCallback(async (requestedPage: number): Promise<void> => {
+    if (!portfolioId) {
+      setCashTransactions([]);
+      setCashPageCount(0);
+      setCashTotal(0);
+      return;
+    }
+    const response = await fetch(`/api/portfolios/${portfolioId}/cash?page=${requestedPage}`);
+    const body = await response.json() as CashPayload & { error?: string };
+    if (!response.ok) throw new Error(body.error ?? 'Could not load cash entries.');
+    setCashTransactions(body.transactions);
+    setCashTotal(body.total);
+    setCashPageCount(body.pageCount);
+    setCashPage(body.page);
+  }, [portfolioId]);
+
   const refresh = useCallback(async (): Promise<void> => {
     if (!portfolioId) return;
     setLoading(true);
     setError('');
     try {
-      const [scanResponse, alertResponse, cashResponse] = await Promise.all([
+      const [scanResponse, alertResponse] = await Promise.all([
         fetch(`/api/scan?portfolioId=${portfolioId}`), fetch(`/api/alerts?portfolioId=${portfolioId}`),
-        fetch(`/api/portfolios/${portfolioId}/cash`),
       ]);
       const scanBody = await scanResponse.json() as ScanPayload & { error?: string };
       const alertBody = await alertResponse.json() as { alerts: AlertItem[] };
-      const cashBody = await cashResponse.json() as CashPayload;
       if (!scanResponse.ok) throw new Error(scanBody.error ?? 'Market scan failed.');
       const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`);
       const performanceBody = await performanceResponse.json() as PerformanceSnapshots;
       setScan(scanBody);
       setAlerts(alertBody.alerts);
-      setCashTransactions(cashBody.transactions);
       setPerformance(performanceBody);
       setLastScannedAt(Date.now());
     } catch (cause) {
@@ -180,6 +196,12 @@ export default function Dashboard() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadTradePage]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadCashPage(cashPage).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load cash entries.'));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [cashPage, loadCashPage]);
   useEffect(() => {
     if (!portfolioId) return;
     const initial = window.setTimeout(() => void refresh(), 0);
@@ -233,33 +255,26 @@ export default function Dashboard() {
     finally { setBusy(false); }
   }
 
-  async function recordPortfolioTrade(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!portfolioId) return;
-    const timestamp = tradeTime ? new Date(tradeTime).getTime() : Date.now();
+  async function recordPortfolioTrade(trade: PositionLedgerInput): Promise<boolean> {
+    if (!portfolioId) return false;
     setBusy(true);
     setError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/trades`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: tradeSymbol, side: tradeSide, quantity: Number(tradeQuantity), price: Number(tradePrice),
-          brokerage: tradeBrokerage ? Number(tradeBrokerage) : 0, timestamp,
-        }),
+        body: JSON.stringify(trade),
       });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Could not record this trade.');
-      setTradeQuantity('');
-      setTradePrice('');
-      setTradeBrokerage('');
-      setTradeTime('');
       setTradePage(1);
       setTradeFilter('');
       await loadTradePage(1, '');
       await loadPortfolios();
       await refresh();
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not record this trade.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -285,25 +300,43 @@ export default function Dashboard() {
     } finally { setBusy(false); }
   }
 
-  async function recordCashEntry(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!portfolioId) return;
-    const timestamp = cashTime ? new Date(cashTime).getTime() : Date.now();
+  async function recordCashEntry(entry: CashLedgerInput): Promise<boolean> {
+    if (!portfolioId) return false;
     setBusy(true);
     setError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/cash`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: cashType, amount: Number(cashAmount), timestamp, note: cashNote }),
+        body: JSON.stringify(entry),
       });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Could not record this cash entry.');
-      setCashAmount('');
-      setCashNote('');
-      setCashTime('');
+      setCashPage(1);
       await refresh();
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not record this cash entry.');
+      return false;
+    } finally { setBusy(false); }
+  }
+
+  async function removeCashEntry(entry: PortfolioCashTransaction): Promise<void> {
+    if (!portfolioId) return;
+    const description = `${entry.type.toLowerCase()} of ${money.format(entry.amount)}`;
+    if (!window.confirm(`Delete cash ${description}? Portfolio performance will be recalculated.`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/portfolios/${portfolioId}/cash/${entry.id}`, { method: 'DELETE' });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? 'Could not delete this cash entry.');
+      await loadCashPage(cashPage);
+      const performanceResponse = await fetch(`/api/portfolios/${portfolioId}/performance`);
+      const performanceBody = await performanceResponse.json() as PerformanceSnapshots;
+      if (!performanceResponse.ok) throw new Error('Cash entry was deleted, but performance could not be refreshed.');
+      setPerformance(performanceBody);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not delete this cash entry.');
     } finally { setBusy(false); }
   }
 
@@ -314,16 +347,16 @@ export default function Dashboard() {
     await refresh();
   }
 
-  async function runSelectedBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function runSelectedBacktest(input: StrategyResearchInput): Promise<boolean> {
     setBusy(true);
     setError('');
     try {
-      const response = await fetch(`/api/backtest?symbol=${encodeURIComponent(backtestSymbol)}&strategy=${backtestStrategy}&days=365`);
+      const response = await fetch(`/api/backtest?symbol=${encodeURIComponent(input.symbol)}&strategy=${input.strategy}&days=365`);
       const body = await response.json() as { result?: BacktestResult; error?: string };
       if (!response.ok || !body.result) throw new Error(body.error ?? 'Backtest failed.');
       setBacktest(body.result);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Backtest failed.'); }
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Backtest failed.'); return false; }
     finally { setBusy(false); }
   }
 
@@ -343,76 +376,84 @@ export default function Dashboard() {
   const performanceCutoff = latestPerformanceTimestamp - selectedPerformanceRange.days * 24 * 60 * 60_000;
   const filteredPortfolioPerformance = performance.portfolio.filter((point) => point.timestamp >= performanceCutoff);
 
-  return <main className="dashboard-shell">
-    <header className="topbar"><a className="brand" href="#top"><span className="brand-mark">Q</span><span>quantify<span className="brand-dot">.</span><small>MARKET INTELLIGENCE</small></span></a><div className="market-status"><span className="status-light"/> ASX · AUSTRALIA <span className="topbar-divider"/> DAILY DECISION CYCLE</div><div className="user-pill"><span className="avatar">A</span> admin</div></header>
-    <div className="page-content" id="top">
-      <section className="welcome-row"><div><div className="eyebrow">YOUR MARKET, IN FOCUS</div><h1>Good trading starts with <span>good signals.</span></h1><p className="subhead">A considered view of the ASX, refreshed against your portfolio.</p></div><button className="button button-quiet" onClick={() => void refresh()} disabled={loading || !portfolioId}><span className={loading ? 'spinner' : 'refresh-icon'}>↻</span>{loading ? 'Scanning market…' : 'Refresh signals'}</button></section>
-      {error && <div className="notice notice-error">{error}</div>}
-      <section className="summary-strip"><div><span className="summary-label">TOTAL PORTFOLIO VALUE</span><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.totalValue) : '—'}</strong><small>{latestPortfolioPerformance ? 'Cash + holdings at latest hourly close' : 'Record trades and cash entries to track'}</small></div><div><span className="summary-label">PORTFOLIO P&amp;L</span><strong className={latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? 'positive' : 'negative'}>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.profitLoss) : '—'}</strong><small>Realized + unrealized, net brokerage</small></div><div><span className="summary-label">WATCHLIST</span><strong>{currentPortfolio?.holdings.length ?? 0}<span className="summary-unit"> assets</span></strong><small>Across {portfolios.length} {portfolios.length === 1 ? 'portfolio' : 'portfolios'}</small></div><div><span className="summary-label">ACTIONABLE SIGNALS</span><strong>{scan?.signals.flatMap((row) => row.daily).filter((signal) => signal.signal !== 'HOLD').length ?? '—'}<span className="summary-unit"> today</span></strong><small>Klinger + RSI · daily candles</small></div></section>
-      <div className="main-grid">
-        <section className="panel signals-panel"><div className="panel-heading"><div><div className="eyebrow">SIGNAL MONITOR</div><h2>Portfolio signals</h2></div><span className="live-tag"><i/> LIVE MONITOR</span></div>
-          <div className="portfolio-bar"><label className="field-label" htmlFor="portfolio-select">PORTFOLIO</label><select id="portfolio-select" value={portfolioId ?? ''} onChange={(event) => { if (event.target.value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(event.target.value) || null); setTradePage(1); setTradeFilter(''); } }}><option value="" disabled>Select a portfolio</option>{portfolios.map((portfolio) => <option key={portfolio.id} value={portfolio.id}>{portfolio.name}</option>)}<option value="new">＋ New portfolio…</option></select><button className="text-button danger-text" disabled={!portfolioId || busy} onClick={() => void deletePortfolio()}>Delete</button></div>
-          {currentPortfolio && <div className="holdings-chips">{currentPortfolio.holdings.map((holding) => <button key={holding.symbol} className="holding-chip" title={`Remove ${holding.symbol}`} onClick={() => void removeHolding(holding.symbol)}>{holding.symbol}<span>×</span></button>)}</div>}
-          {currentPortfolio && <form className="inline-form" onSubmit={(event) => void addHolding(event)}><input aria-label="ASX ticker" placeholder="Add ticker e.g. CSL or CSL.AX" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} maxLength={20}/><button className="button button-outline" disabled={busy || !symbolInput.trim()}>Add asset</button></form>}
-          <div className="table-wrap"><table><thead><tr><th>ASSET</th><th>LAST PRICE</th><th>DAILY KVO</th><th>DAILY RSI</th><th>DAILY CHANGE</th></tr></thead><tbody>{currentPortfolio?.holdings.map((holding) => {
-            const row = scanned.get(holding.symbol);
-            const klinger = row?.daily.find((item) => item.strategyId === 'klinger-oscillator');
-            const rsi = row?.daily.find((item) => item.strategyId === 'rsi-14');
-            return <tr key={holding.symbol}><td><span className="asset-symbol">{holding.symbol.replace('.AX', '')}</span><small className="asset-exchange">ASX</small></td><td className="price-cell">{klinger?.price ? money.format(klinger.price) : '—'}</td><td><SignalPill signal={klinger?.signal ?? 'HOLD'} /></td><td><SignalPill signal={rsi?.signal ?? 'HOLD'} detail={rsi?.indicators.rsi != null ? `RSI ${rsi.indicators.rsi.toFixed(0)}` : undefined}/></td><td><DayPriceChange dailyCandles={row?.dailyCandles ?? []} hourlyCandles={row?.hourlyCandles ?? []}/></td></tr>;
-          })}{currentPortfolio?.holdings.length === 0 && <tr><td colSpan={5} className="empty-row">Add tickers above to start monitoring this portfolio.</td></tr>}{!currentPortfolio && <tr><td colSpan={5} className="empty-row">Create a portfolio to begin your market scan.</td></tr>}</tbody></table></div>
-          {scan?.warnings.map((warning) => <div className="notice notice-warning" key={warning}>{warning}</div>)}<div className="panel-footnote">Signals describe indicator conditions and are decision support, not trade instructions. Last checked: {lastScannedAt ? dateTime.format(lastScannedAt) : 'not yet scanned'}.</div>
+  return <div className="app-shell" id="top">
+    <aside className="app-sidebar">
+      <a className="sidebar-brand" href="#top"><span className="sidebar-logo">Q</span><span>quantify<span>.</span><small>ASX MARKET WORKSPACE</small></span></a>
+      <div className="sidebar-label">WORKSPACE</div>
+      <nav className="sidebar-nav" aria-label="Workspace navigation">
+        <a className="nav-item active" href="#overview"><LayoutDashboard/>Overview</a>
+        <a className="nav-item" href="#portfolio"><BarChart3/>Portfolio signals</a>
+        <a className="nav-item" href="#performance"><Activity/>P&amp;L performance</a>
+        <a className="nav-item" href="#ledger"><Wallet/>Trade &amp; cash ledger</a>
+        <a className="nav-item" href="#research"><Activity/>Strategy research</a>
+      </nav>
+      <div className="sidebar-footer"><div className="sidebar-help"><CircleHelp/><span>Decision support only<br/><small>No orders are sent</small></span></div><div className="sidebar-profile"><span className="profile-avatar">A</span><span><strong>admin</strong><small>Local workspace</small></span><Settings2 className="profile-settings"/></div></div>
+    </aside>
+
+    <main className="app-main">
+      <header className="app-header"><div className="breadcrumb"><span>Workspace</span><ChevronRight/><strong>Overview</strong></div><div className="header-actions"><Badge variant="outline" className="market-badge"><i/>ASX <span>·</span> AUSTRALIA</Badge><span className="header-divider"/><span className="cycle-label">DAILY DECISION CYCLE</span><Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading || !portfolioId}>{loading ? <LoaderCircle className="size-4 animate-spin"/> : <RefreshCw className="size-4"/>}{loading ? 'Scanning…' : 'Refresh data'}</Button></div></header>
+
+      <div className="dashboard-content">
+        <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the ASX, refreshed against your portfolio.</p></div>
+          <div className="portfolio-picker"><label htmlFor="portfolio-picker">ACTIVE PORTFOLIO</label><SelectControl id="portfolio-picker" value={portfolioId === null ? '' : String(portfolioId)} displayValue={currentPortfolio?.name} ariaLabel="PORTFOLIO" placeholder="Select a portfolio" className="portfolio-select" onValueChange={(value) => { if (value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(value) || null); setTradePage(1); setTradeFilter(''); } }}>
+            {portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}<SelectOption value="new">＋ New portfolio…</SelectOption>
+          </SelectControl><Button variant="ghost" size="icon" className="delete-portfolio" aria-label="Delete portfolio" title="Delete portfolio" disabled={!portfolioId || busy} onClick={() => void deletePortfolio()}><Trash2 className="size-4"/></Button></div>
         </section>
-        <aside className="panel watch-panel"><div className="panel-heading"><div><div className="eyebrow">PRICE CONTEXT</div><h2>Recent movement</h2></div><span className="timeframe-tag">1H · LAST 48 BARS</span></div>{currentPortfolio?.holdings.slice(0, 4).map((holding) => { const row = scanned.get(holding.symbol); const latest = row?.hourlyCandles.at(-1); return <div className="watch-row" key={holding.symbol}><div className="watch-meta"><span className="asset-symbol">{holding.symbol.replace('.AX', '')}</span><small>{latest ? money.format(latest.close) : 'Waiting for data'}</small></div><LineChart candles={row?.hourlyCandles ?? []}/></div>; })}{!currentPortfolio?.holdings.length && <div className="chart-empty">Add assets to see hourly price context.</div>}<div className="chart-caption">Hourly candles add context to the daily signal.</div></aside>
+        {error && <div className="notice notice-error" role="alert">{error}</div>}
+
+        <section className="metric-grid" aria-label="Portfolio summary">
+          <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon blue"><Wallet/></div><div className="metric-label">TOTAL PORTFOLIO VALUE</div><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.totalValue) : '—'}</strong><small>{latestPortfolioPerformance ? 'Cash + holdings at latest hourly close' : 'Record trades and cash entries to track'}</small></CardContent></Card>
+          <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon" data-positive={latestPortfolioPerformance ? latestPortfolioPerformance.profitLoss >= 0 : undefined}>{latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? <ArrowUpRight/> : <ArrowDownRight/>}</div><div className="metric-label">PORTFOLIO PROFIT &amp; LOSS</div><strong className={latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? 'positive' : 'negative'}>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.profitLoss) : '—'}</strong><small>Realized + unrealized, net brokerage</small></CardContent></Card>
+          <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon violet"><BarChart3/></div><div className="metric-label">WATCHLIST</div><strong>{currentPortfolio?.holdings.length ?? 0}<span className="metric-unit"> assets</span></strong><small>Across {portfolios.length} {portfolios.length === 1 ? 'portfolio' : 'portfolios'}</small></CardContent></Card>
+          <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon amber"><Bell/></div><div className="metric-label">ACTIONABLE SIGNALS</div><strong>{scan?.signals.flatMap((row) => row.daily).filter((signal) => signal.signal !== 'HOLD').length ?? '—'}<span className="metric-unit"> today</span></strong><small>Klinger + RSI · daily candles</small></CardContent></Card>
+        </section>
+
+        <section className="overview-grid" id="portfolio">
+          <Card className="signals-card"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL MONITOR</p><CardTitle>Portfolio signals</CardTitle></div><Badge variant="success" className="live-badge"><i/>Live monitor</Badge></CardHeader>
+            <CardContent className="signals-content">
+              {currentPortfolio && <div className="watchlist-tools"><div className="holdings-chips">{currentPortfolio.holdings.map((holding) => <button key={holding.symbol} className="holding-chip" title={`Remove ${holding.symbol}`} aria-label={`Remove ${holding.symbol}`} onClick={() => void removeHolding(holding.symbol)}>{holding.symbol}<span>×</span></button>)}</div><form className="inline-form" onSubmit={(event) => void addHolding(event)}><Input aria-label="ASX ticker" placeholder="Add ASX ticker e.g. CSL" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} maxLength={20}/><Button type="submit" variant="outline" size="sm" disabled={busy || !symbolInput.trim()}><Plus className="size-4"/>Add asset</Button></form></div>}
+              <div className="table-wrap"><table><thead><tr><th>ASSET</th><th>LAST PRICE</th><th>DAILY KVO</th><th>DAILY RSI</th><th>DAILY CHANGE</th></tr></thead><tbody>{currentPortfolio?.holdings.map((holding) => {
+                const row = scanned.get(holding.symbol);
+                const klinger = row?.daily.find((item) => item.strategyId === 'klinger-oscillator');
+                const rsi = row?.daily.find((item) => item.strategyId === 'rsi-14');
+                return <tr key={holding.symbol}><td><span className="asset-symbol">{holding.symbol.replace('.AX', '')}</span><small className="asset-exchange">ASX</small></td><td className="price-cell">{klinger?.price ? money.format(klinger.price) : '—'}</td><td><SignalPill signal={klinger?.signal ?? 'HOLD'}/></td><td><SignalPill signal={rsi?.signal ?? 'HOLD'} detail={rsi?.indicators.rsi != null ? `RSI ${rsi.indicators.rsi.toFixed(0)}` : undefined}/></td><td><DayPriceChange dailyCandles={row?.dailyCandles ?? []} hourlyCandles={row?.hourlyCandles ?? []}/></td></tr>;
+              })}{currentPortfolio?.holdings.length === 0 && <tr><td colSpan={5} className="empty-row">Add tickers above to start monitoring this portfolio.</td></tr>}{!currentPortfolio && <tr><td colSpan={5} className="empty-row">Create a portfolio to begin your market scan.</td></tr>}</tbody></table></div>
+              {scan?.warnings.map((warning) => <div className="notice notice-warning" key={warning}>{warning}</div>)}<p className="panel-footnote">Signals are decision support, not trade instructions. Last checked: {lastScannedAt ? dateTime.format(lastScannedAt) : 'not yet scanned'}.</p>
+            </CardContent>
+          </Card>
+          <Card className="movement-card"><CardHeader className="section-card-header"><div><p className="section-kicker">PRICE CONTEXT</p><CardTitle>Recent movement</CardTitle></div><Badge variant="outline">1H · LAST 48 BARS</Badge></CardHeader><CardContent className="movement-content">{currentPortfolio?.holdings.slice(0, 4).map((holding) => { const row = scanned.get(holding.symbol); const latest = row?.hourlyCandles.at(-1); return <div className="watch-row" key={holding.symbol}><div className="watch-meta"><span className="asset-symbol">{holding.symbol.replace('.AX', '')}</span><small>{latest ? money.format(latest.close) : 'Waiting for data'}</small></div><LineChart candles={row?.hourlyCandles ?? []}/></div>; })}{!currentPortfolio?.holdings.length && <div className="chart-empty">Add assets to see hourly price context.</div>}<p className="chart-caption">Hourly candles add context to the daily signal.</p></CardContent></Card>
+        </section>
+
+        <section className="performance-section" id="performance">
+          <Tabs.Root value={performanceRange} onValueChange={(value) => setPerformanceRange(value as PerformanceRange)} className="performance-tabs">
+            <Card className="performance-card"><CardHeader className="performance-header"><div><p className="section-kicker">HOURLY PERFORMANCE</p><CardTitle>Portfolio profit &amp; loss</CardTitle><CardDescription>Track portfolio performance without deposits masking trading returns.</CardDescription></div><Tabs.List className="timeframe-tabs" aria-label="Portfolio P&L timeframe">{performanceRanges.map((range) => <Tabs.Tab key={range.value} value={range.value} className="timeframe-tab">{range.label}</Tabs.Tab>)}</Tabs.List></CardHeader>
+              <Tabs.Panel value={performanceRange} className="performance-panel-content"><CardContent className="performance-content">
+                <div className="performance-metrics"><div className="performance-total"><small>CASH BALANCE</small><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.cashBalance) : '—'}</strong></div><div className="performance-total"><small>REALIZED + UNREALIZED · NET BROKERAGE</small><strong className={latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? 'positive' : 'negative'}>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.profitLoss) : '—'}</strong></div></div>
+                <PerformanceChart points={filteredPortfolioPerformance} rangeLabel={selectedPerformanceRange.label}/>
+                {filteredPortfolioPerformance.length > 1 && <div className="chart-axis-labels"><span>{dateTime.format(filteredPortfolioPerformance[0].timestamp)}</span><span>{dateTime.format(filteredPortfolioPerformance.at(-1)!.timestamp)}</span></div>}
+                <p className="chart-caption">{selectedPerformanceRange.label} · Each point is captured from cached hourly candle closes.</p>
+                <div className="holding-performance"><div className="holding-heading"><div><p className="section-kicker">POSITIONS</p><h3>HOLDING PERFORMANCE</h3></div><span>{latestHoldingPerformance.size} assets</span></div>{latestHoldingPerformance.size ? <div className="holding-table-wrap"><div className="holding-performance-head"><span>ASSET</span><span>UNITS</span><span>AVG COST / UNIT</span><span>MARKET VALUE</span><span>P&amp;L</span><span>TREND</span></div>{[...latestHoldingPerformance.values()].sort((left, right) => left.symbol.localeCompare(right.symbol)).map((point) => <div className="holding-performance-row" key={point.symbol}><strong>{point.symbol}</strong><span>{point.quantity}</span><span>{money.format(point.averageUnitPrice)}</span><span>{money.format(point.marketValue)}</span><strong className={point.profitLoss >= 0 ? 'positive' : 'negative'}>{money.format(point.profitLoss)}</strong><HoldingPulseChart symbol={point.symbol} points={(holdingPerformanceHistory.get(point.symbol) ?? []).filter((historyPoint) => historyPoint.timestamp >= performanceCutoff)}/></div>)}</div> : <div className="chart-empty">Add a trade to see per-holding P&amp;L.</div>}</div>
+              </CardContent></Tabs.Panel>
+            </Card>
+          </Tabs.Root>
+        </section>
+
+        <section className="ledger-grid" id="ledger">
+          <PositionLedger portfolioId={portfolioId} symbols={currentPortfolio?.holdings.map(({ symbol }) => symbol) ?? []} trades={trades} tickers={tradeTickers} filter={tradeFilter} page={tradePage} pageCount={tradePageCount} total={tradeTotal} busy={busy} onSubmit={recordPortfolioTrade} onDelete={removePortfolioTrade} onFilterChange={(symbol) => { setTradeFilter(symbol); setTradePage(1); }} onPageChange={setTradePage}/>
+          <CashLedger portfolioId={portfolioId} transactions={cashTransactions} page={cashPage} pageCount={cashPageCount} total={cashTotal} busy={busy} onSubmit={recordCashEntry} onDelete={removeCashEntry} onPageChange={setCashPage}/>
+        </section>
+
+        <section className="activity-section">
+          <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol.replace('.AX', '')}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
+        </section>
+
+        <StrategyResearch result={backtest} busy={busy} onRun={runSelectedBacktest}/>
+        <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span><span>Local only · Candles stored on this device</span></footer>
       </div>
-      <div className="lower-grid portfolio-tools">
-        <section className="panel trade-panel">
-          <div className="eyebrow">POSITION LEDGER</div><h2>Record a trade</h2>
-          <p className="panel-description">Log completed trades. Positions and P&amp;L are derived from these entries; no orders are sent.</p>
-          <form className="trade-form" onSubmit={(event) => void recordPortfolioTrade(event)}>
-            <label>ASX ticker<input aria-label="Trade ticker" value={tradeSymbol} onChange={(event) => setTradeSymbol(event.target.value.toUpperCase())} placeholder="e.g. MQG.AX" list="portfolio-tickers" required maxLength={20}/></label>
-            <datalist id="portfolio-tickers">{currentPortfolio?.holdings.map(({ symbol }) => <option key={symbol} value={symbol}/>)}</datalist>
-            <label>TYPE<select aria-label="Trade side" value={tradeSide} onChange={(event) => setTradeSide(event.target.value as TradeSide)}><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label>
-            <label>UNITS<input aria-label="Trade units" type="number" min="0.000001" step="any" value={tradeQuantity} onChange={(event) => setTradeQuantity(event.target.value)} required/></label>
-            <label>PRICE / UNIT (AUD)<input aria-label="Trade price" type="number" min="0.000001" step="any" value={tradePrice} onChange={(event) => setTradePrice(event.target.value)} required/></label>
-            <label>BROKERAGE (AUD)<input aria-label="Trade brokerage" type="number" min="0" step="0.01" value={tradeBrokerage} onChange={(event) => setTradeBrokerage(event.target.value)} placeholder="0.00"/></label>
-            <label>TRADE DATE / TIME<input aria-label="Trade date and time" lang="en-GB" type="datetime-local" value={tradeTime} onChange={(event) => setTradeTime(event.target.value)}/></label>
-            <button className="button button-primary" disabled={busy || !portfolioId}>{busy ? 'Saving…' : 'Save trade'}</button>
-          </form>
-          <small className="form-hint">Leave trade date/time blank to use now. Values are in Australian dollars; sells cannot exceed your recorded position.</small>
-          <div className="trade-history">
-            <div className="trade-history-heading"><div className="backtest-result-label">RECENT TRADES</div><label className="trade-filter-label"><span>TICKER</span><select aria-label="Filter trades by ticker" value={tradeFilter} onChange={(event) => { setTradeFilter(event.target.value); setTradePage(1); }}><option value="">All tickers</option>{tradeTickers.map((symbol) => <option key={symbol} value={symbol}>{symbol}</option>)}</select></label></div>
-            {trades.length ? <>
-              {trades.map((trade) => <div className="trade-row" key={trade.id}><span className={`trade-side ${trade.side.toLowerCase()}`}>{trade.side}</span><strong>{trade.symbol}</strong><span>{trade.quantity} @ {money.format(trade.price)}</span><small>Brokerage {money.format(trade.brokerage)} · {dateTime.format(trade.timestamp)}</small><button className="trade-delete-button" type="button" aria-label={`Delete ${trade.symbol} ${trade.side} trade ${dateTime.format(trade.timestamp)}`} disabled={busy} onClick={() => void removePortfolioTrade(trade)}>Delete</button></div>)}
-              <div className="trade-pagination"><span>{(tradePage - 1) * 6 + 1}–{Math.min(tradePage * 6, tradeTotal)} of {tradeTotal}</span><div><button type="button" className="text-button" aria-label="Previous trade page" disabled={busy || tradePage <= 1} onClick={() => setTradePage((page) => Math.max(1, page - 1))}>‹ Previous</button><span>Page {tradePage} of {Math.max(tradePageCount, 1)}</span><button type="button" className="text-button" aria-label="Next trade page" disabled={busy || tradePage >= tradePageCount} onClick={() => setTradePage((page) => page + 1)}>Next ›</button></div></div>
-            </> : <div className="chart-empty">{tradeFilter ? `No trades recorded for ${tradeFilter}.` : 'No trades recorded for this portfolio.'}</div>}
-          </div>
-          <div className="cash-ledger"><div className="eyebrow">CASH LEDGER</div><h2>Record a deposit or withdrawal</h2><p className="panel-description">Cash entries and trades combine to calculate total portfolio value. Use past dates to capture existing account cash flows.</p>
-            <form className="trade-form cash-form" onSubmit={(event) => void recordCashEntry(event)}>
-              <label>TYPE<select aria-label="Cash entry type" value={cashType} onChange={(event) => setCashType(event.target.value as CashTransactionType)}><option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdrawal</option></select></label>
-              <label>AMOUNT (AUD)<input aria-label="Cash amount" type="number" min="0.01" step="0.01" value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} required/></label>
-              <label>DATE / TIME<input aria-label="Cash date and time" lang="en-GB" type="datetime-local" value={cashTime} onChange={(event) => setCashTime(event.target.value)}/></label>
-              <label>NOTE<input aria-label="Cash note" value={cashNote} onChange={(event) => setCashNote(event.target.value)} maxLength={160} placeholder="Optional"/></label>
-              <button className="button button-primary" disabled={busy || !portfolioId || !cashAmount}>{busy ? 'Saving…' : 'Save cash entry'}</button>
-            </form>
-            <div className="trade-history"><div className="backtest-result-label">RECENT CASH ENTRIES</div>{cashTransactions.length ? [...cashTransactions].slice(-6).reverse().map((entry) => <div className="trade-row" key={entry.id}><span className={`trade-side ${entry.type === 'DEPOSIT' ? 'buy' : 'sell'}`}>{entry.type}</span><strong>{money.format(entry.amount)}</strong><span>{entry.note || 'Cash movement'}</span><small>{dateTime.format(entry.timestamp)}</small></div>) : <div className="chart-empty">No cash entries recorded for this portfolio.</div>}</div>
-          </div>
-        </section>
-        <section className="panel performance-panel">
-          <div className="panel-heading performance-heading"><div><div className="eyebrow">HOURLY PERFORMANCE</div><h2>Portfolio profit &amp; loss</h2></div><div className="timeframe-pills" role="group" aria-label="Portfolio P&L timeframe">{performanceRanges.map((range) => <button key={range.value} type="button" className={performanceRange === range.value ? 'timeframe-pill active' : 'timeframe-pill'} aria-pressed={performanceRange === range.value} onClick={() => setPerformanceRange(range.value)}>{range.label}</button>)}</div></div>
-          <div className="performance-total"><small>CASH BALANCE</small><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.cashBalance) : '—'}</strong></div>
-          <div className="performance-total"><small>REALIZED + UNREALIZED · NET BROKERAGE</small><strong className={latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? 'positive' : 'negative'}>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.profitLoss) : '—'}</strong></div>
-          <PerformanceChart points={filteredPortfolioPerformance} rangeLabel={selectedPerformanceRange.label}/>
-          {filteredPortfolioPerformance.length > 1 && <div className="chart-axis-labels"><span>{dateTime.format(filteredPortfolioPerformance[0].timestamp)}</span><span>{dateTime.format(filteredPortfolioPerformance.at(-1)!.timestamp)}</span></div>}
-          <div className="chart-caption">{selectedPerformanceRange.label} · Each point is captured from cached hourly candle closes.</div>
-          <div className="holding-performance"><div className="backtest-result-label">HOLDING PERFORMANCE</div>{latestHoldingPerformance.size ? <><div className="holding-performance-head"><span>ASSET</span><span>UNITS</span><span>AVG COST / UNIT</span><span>MARKET VALUE</span><span>P&amp;L</span><span>TREND</span></div>{[...latestHoldingPerformance.values()].sort((left, right) => left.symbol.localeCompare(right.symbol)).map((point) => <div className="holding-performance-row" key={point.symbol}><strong>{point.symbol}</strong><span>{point.quantity}</span><span>{money.format(point.averageUnitPrice)}</span><span>{money.format(point.marketValue)}</span><strong className={point.profitLoss >= 0 ? 'positive' : 'negative'}>{money.format(point.profitLoss)}</strong><HoldingPulseChart symbol={point.symbol} points={(holdingPerformanceHistory.get(point.symbol) ?? []).filter((historyPoint) => historyPoint.timestamp >= performanceCutoff)}/></div>)}</> : <div className="chart-empty">Add a trade to see per-holding P&amp;L.</div>}</div>
-        </section>
-      </div>
-      <div className="lower-grid"><section className="panel alerts-panel"><div className="panel-heading"><div><div className="eyebrow">ACTIVITY</div><h2>Signal history</h2></div><span className="count-tag">{alerts.length} RECORDED</span></div>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol.replace('.AX', '')}</strong><span className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</span></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon">⌁</span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</section>
-        <section className="panel backtest-panel"><div className="eyebrow">STRATEGY RESEARCH</div><h2>Test a hypothesis</h2><p className="panel-description">Compare strategies against the same cached daily history.</p><form className="backtest-form" onSubmit={(event) => void runSelectedBacktest(event)}><input aria-label="Ticker for backtest" value={backtestSymbol} onChange={(event) => setBacktestSymbol(event.target.value.toUpperCase())}/><select aria-label="Backtest strategy" value={backtestStrategy} onChange={(event) => setBacktestStrategy(event.target.value)}><option value="klinger-oscillator">Klinger</option><option value="rsi-14">RSI (14)</option></select><button className="button button-primary" disabled={busy}>{busy ? 'Working…' : 'Run backtest'}</button></form>{backtest && <><div className="backtest-result-label">LAST RUN · {backtest.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</div><div className="backtest-results"><div><small>1Y RETURN</small><strong className={backtest.totalReturnPct >= 0 ? 'positive' : 'negative'}>{backtest.totalReturnPct.toFixed(1)}%</strong></div><div><small>WIN RATE</small><strong>{backtest.winRatePct.toFixed(0)}%</strong></div><div><small>MAX DRAWDOWN</small><strong className="negative">{backtest.maxDrawdownPct.toFixed(1)}%</strong></div><div><small>CLOSED TRADES</small><strong>{backtest.trades.length}</strong></div></div></>}<div className="method-note">{backtestStrategy === 'rsi-14' ? 'BUY when RSI re-enters above 30. SELL when RSI re-enters below 70.' : 'BUY on KVO crossover above its signal line. SELL on crossover below.'} Next-candle open execution; no fees or slippage.</div></section></div>
-      <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span><span>Local only · Candles stored on this device</span></footer>
-    </div>
-    {portfolioDialogOpen && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPortfolioDialogOpen(false); }}><section className="portfolio-dialog" role="dialog" aria-modal="true" aria-labelledby="new-portfolio-title" onKeyDown={(event) => { if (event.key === 'Escape') setPortfolioDialogOpen(false); }}><button className="dialog-close" type="button" aria-label="Close dialog" onClick={() => setPortfolioDialogOpen(false)}>×</button><div className="eyebrow">PORTFOLIO SETUP</div><h2 id="new-portfolio-title">Create a portfolio</h2><p className="panel-description">Give this portfolio a name. You can add assets after creating it.</p><form className="portfolio-dialog-form" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="new-portfolio-name">PORTFOLIO NAME</label><input id="new-portfolio-name" aria-label="New portfolio name" autoFocus placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><div className="dialog-actions"><button className="button button-quiet" type="button" disabled={busy} onClick={() => setPortfolioDialogOpen(false)}>Cancel</button><button className="button button-primary" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</button></div></form></section></div>}
-  </main>;
+    </main>
+
+    <DialogRoot open={portfolioDialogOpen} onOpenChange={setPortfolioDialogOpen}><DialogContent aria-label="Create a portfolio" className="portfolio-dialog"><p className="section-kicker">PORTFOLIO SETUP</p><DialogTitle className="dialog-title">Create a portfolio</DialogTitle><DialogDescription className="panel-description">Give this portfolio a name. You can add assets after creating it.</DialogDescription><form className="portfolio-dialog-form" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="new-portfolio-name">PORTFOLIO NAME</label><Input id="new-portfolio-name" aria-label="New portfolio name" autoFocus placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><div className="dialog-actions"><DialogClose render={<Button variant="outline" disabled={busy}/>}>Cancel</DialogClose><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></DialogContent></DialogRoot>
+  </div>;
 }
 
 function SignalPill({ signal, detail, compact = false }: { signal: SignalResult['signal']; detail?: string; compact?: boolean }) {

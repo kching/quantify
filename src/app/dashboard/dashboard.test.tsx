@@ -8,6 +8,18 @@ GlobalRegistrator.register();
 const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 const { default: Dashboard } = await import('./dashboard');
 
+async function chooseOption(label: string, optionName: string): Promise<void> {
+  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  const option = await screen.findByRole('option', { name: optionName });
+  fireEvent.pointerDown(option, { pointerType: 'mouse' });
+  fireEvent.click(option);
+}
+
+async function waitForPortfolio(name = 'My watchlist'): Promise<void> {
+  await screen.findByRole('combobox', { name: 'PORTFOLIO' });
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'PORTFOLIO' }).textContent).toContain(name));
+}
+
 interface PortfolioWithHoldings extends Portfolio {
   holdings: Array<{ symbol: string; addedAt: number }>;
 }
@@ -81,7 +93,13 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
     return Response.json({ trade }, { status: 201 });
   }
   if (portfolioIdMatch?.[2] === 'performance' && method === 'GET') return Response.json(performance);
-  if (portfolioIdMatch?.[2] === 'cash' && method === 'GET') return Response.json({ transactions: cashTransactions });
+  if (portfolioIdMatch?.[2] === 'cash' && method === 'GET') {
+    const pageSize = 6;
+    const pageCount = Math.ceil(cashTransactions.length / pageSize);
+    const page = Math.min(Number(url.searchParams.get('page') ?? '1'), Math.max(pageCount, 1));
+    const entries = [...cashTransactions].sort((left, right) => right.timestamp - left.timestamp || right.id - left.id);
+    return Response.json({ transactions: entries.slice((page - 1) * pageSize, page * pageSize), total: cashTransactions.length, page, pageSize, pageCount });
+  }
   if (portfolioIdMatch?.[2] === 'cash' && method === 'POST') {
     const transaction = { id: cashTransactions.length + 1, portfolioId: Number(portfolioIdMatch[1]), type: body.type as 'DEPOSIT' | 'WITHDRAWAL', amount: Number(body.amount), timestamp: Number(body.timestamp), note: String(body.note ?? '') };
     cashTransactions.push(transaction);
@@ -90,6 +108,11 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
   const tradeDeleteMatch = url.pathname.match(/^\/api\/portfolios\/(\d+)\/trades\/(\d+)$/);
   if (tradeDeleteMatch && method === 'DELETE') {
     trades = trades.filter((trade) => trade.id !== Number(tradeDeleteMatch[2]));
+    return Response.json({ ok: true });
+  }
+  const cashDeleteMatch = url.pathname.match(/^\/api\/portfolios\/(\d+)\/cash\/(\d+)$/);
+  if (cashDeleteMatch && method === 'DELETE') {
+    cashTransactions = cashTransactions.filter((transaction) => transaction.id !== Number(cashDeleteMatch[2]));
     return Response.json({ ok: true });
   }
   const holdingMatch = url.pathname.match(/^\/api\/portfolios\/(\d+)\/holdings$/);
@@ -172,7 +195,7 @@ describe('Dashboard', () => {
   it('loads portfolios, scans the selected watchlist and displays daily signals, day change and alerts', async () => {
     render(<Dashboard />);
 
-    expect(await screen.findByRole('option', { name: 'My watchlist' })).toBeDefined();
+    await waitForPortfolio();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/scan?portfolioId=1'));
     expect(await screen.findByText('KVO crossed above its signal line.')).toBeDefined();
     expect(screen.getByText('RSI 52')).toBeDefined();
@@ -194,23 +217,25 @@ describe('Dashboard', () => {
     expect(await screen.findByText('Create a portfolio to begin your market scan.')).toBeDefined();
     expect(screen.getByText('Add assets to see hourly price context.')).toBeDefined();
     expect(screen.queryByRole('textbox', { name: 'ASX ticker' })).toBeNull();
-    expect(screen.getByRole('option', { name: '＋ New portfolio…' })).toBeDefined();
+    fireEvent.click(screen.getByRole('combobox', { name: 'PORTFOLIO' }));
+    expect(await screen.findByRole('option', { name: '＋ New portfolio…' })).toBeDefined();
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'PORTFOLIO' }), { key: 'Escape' });
     expect(screen.queryByRole('textbox', { name: 'New portfolio name' })).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/scan'))).toBe(false);
   });
 
   it('creates a portfolio and selects it', async () => {
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'PORTFOLIO' }), { target: { value: 'new' } });
+    await chooseOption('PORTFOLIO', '＋ New portfolio…');
     expect(await screen.findByRole('dialog', { name: 'Create a portfolio' })).toBeDefined();
     fireEvent.change(screen.getByRole('textbox', { name: 'New portfolio name' }), { target: { value: 'Long term' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create portfolio' }));
 
-    await waitFor(() => expect((screen.getByRole('combobox', { name: 'PORTFOLIO' }) as HTMLSelectElement).value).toBe('2'));
+    await waitForPortfolio('Long term');
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios', expect.objectContaining({ method: 'POST' }));
-    expect(await screen.findByRole('option', { name: 'Long term' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'PORTFOLIO' }).textContent).toContain('Long term');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(await screen.findByText('Add tickers above to start monitoring this portfolio.')).toBeDefined();
     await waitForScanCompletion();
@@ -218,8 +243,8 @@ describe('Dashboard', () => {
 
   it('closes the new portfolio dialog without creating anything', async () => {
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
-    fireEvent.change(screen.getByRole('combobox', { name: 'PORTFOLIO' }), { target: { value: 'new' } });
+    await waitForPortfolio();
+    await chooseOption('PORTFOLIO', '＋ New portfolio…');
     expect(await screen.findByRole('dialog', { name: 'Create a portfolio' })).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -230,28 +255,28 @@ describe('Dashboard', () => {
 
   it('adds and removes a ticker from the selected watchlist', async () => {
     render(<Dashboard />);
-    expect(await screen.findByTitle('Remove MQG.AX')).toBeDefined();
+    expect(await screen.findByLabelText('Remove MQG.AX')).toBeDefined();
     await waitForScanCompletion();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'ASX ticker' }), { target: { value: 'csl' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add asset' }));
-    expect(await screen.findByTitle('Remove CSL.AX')).toBeDefined();
+    expect(await screen.findByLabelText('Remove CSL.AX')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/holdings', expect.objectContaining({ method: 'POST' }));
 
-    fireEvent.click(screen.getByTitle('Remove CSL.AX'));
+    fireEvent.click(screen.getByLabelText('Remove CSL.AX'));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/holdings?symbol=CSL.AX', { method: 'DELETE' }));
-    await waitFor(() => expect(screen.queryByTitle('Remove CSL.AX')).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText('Remove CSL.AX')).toBeNull());
     await waitForScanCompletion();
   });
 
   it('records a completed trade with execution price, units and brokerage', async () => {
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
-    await screen.findByTitle('Remove MQG.AX');
+    await waitForPortfolio();
+    await screen.findByLabelText('Remove MQG.AX');
     expect(screen.getByLabelText('Trade date and time').getAttribute('lang')).toBe('en-GB');
 
     fireEvent.change(screen.getByLabelText('Trade ticker'), { target: { value: 'csl' } });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Trade side' }), { target: { value: 'BUY' } });
+    await chooseOption('Trade side', 'Buy');
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Trade units' }), { target: { value: '5' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Trade price' }), { target: { value: '120' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Trade brokerage' }), { target: { value: '9.95' } });
@@ -261,7 +286,7 @@ describe('Dashboard', () => {
     expect(await screen.findByText('5 @ $120.00')).toBeDefined();
     expect(screen.getByText(/Brokerage \$9\.95/)).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/trades', expect.objectContaining({ method: 'POST' }));
-    expect(await screen.findByTitle('Remove CSL.AX')).toBeDefined();
+    expect(await screen.findByLabelText('Remove CSL.AX')).toBeDefined();
     await waitForScanCompletion();
   });
 
@@ -272,7 +297,7 @@ describe('Dashboard', () => {
       quantity: index + 1, price: 100 + index, brokerage: 5, timestamp: baseTime + index * 1_000,
     }));
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
     await screen.findByText('Page 1 of 3');
     const history = document.querySelector('.trade-panel .trade-history') as HTMLElement;
     expect(history.querySelectorAll('.trade-row')).toHaveLength(6);
@@ -283,7 +308,7 @@ describe('Dashboard', () => {
     expect(screen.getByText('7–12 of 13')).toBeDefined();
     expect(history.querySelectorAll('.trade-row')).toHaveLength(6);
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Filter trades by ticker' }), { target: { value: 'MQG.AX' } });
+    await chooseOption('Filter trades by ticker', 'MQG.AX');
     await screen.findByText('Page 1 of 2');
     expect(screen.getByText('1–6 of 8')).toBeDefined();
     expect(history.querySelectorAll('.trade-row')).toHaveLength(6);
@@ -295,7 +320,7 @@ describe('Dashboard', () => {
     omitTradeTickers = true;
     render(<Dashboard />);
 
-    await screen.findByRole('option', { name: 'All tickers' });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Filter trades by ticker' })).toBeDefined());
     expect(screen.getByRole('combobox', { name: 'Filter trades by ticker' })).toBeDefined();
   });
 
@@ -312,10 +337,10 @@ describe('Dashboard', () => {
 
   it('records cash deposits and withdrawals in the portfolio cash ledger', async () => {
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
     expect(screen.getByLabelText('Cash date and time').getAttribute('lang')).toBe('en-GB');
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Cash entry type' }), { target: { value: 'DEPOSIT' } });
+    await chooseOption('Cash entry type', 'Deposit');
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Cash amount' }), { target: { value: '5000' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Cash note' }), { target: { value: 'Initial funding' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Save cash entry' }).closest('form') as HTMLFormElement);
@@ -326,9 +351,33 @@ describe('Dashboard', () => {
     await waitForScanCompletion();
   });
 
+  it('paginates and deletes cash entries from the cash ledger', async () => {
+    const baseTime = Date.now() - 100_000;
+    cashTransactions = Array.from({ length: 7 }, (_, index) => ({
+      id: index + 1, portfolioId: 1, type: index % 2 ? 'WITHDRAWAL' as const : 'DEPOSIT' as const,
+      amount: 100 + index, timestamp: baseTime + index * 1_000, note: `Cash entry ${index + 1}`,
+    }));
+    render(<Dashboard />);
+    await screen.findByText('Page 1 of 2');
+    const history = document.querySelector('.cash-panel .cash-history') as HTMLElement;
+    expect(history.querySelectorAll('.cash-row')).toHaveLength(6);
+    expect(screen.getByText('1–6 of 7')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next cash page' }));
+    await screen.findByText('Page 2 of 2');
+    expect(screen.getByText('7–7 of 7')).toBeDefined();
+    await waitFor(() => expect(history.querySelectorAll('.cash-row')).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: /Delete deposit of \$100\.00/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/cash/1', { method: 'DELETE' }));
+    expect(confirmMock).toHaveBeenCalledWith('Delete cash deposit of $100.00? Portfolio performance will be recalculated.');
+    await screen.findByText('Page 1 of 1');
+    expect(history.querySelectorAll('.cash-row')).toHaveLength(6);
+  });
+
   it('plots hourly portfolio P&L and shows the latest per-holding value', async () => {
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
 
     expect(await screen.findByRole('img', { name: 'Hourly portfolio profit and loss, Last 1m' })).toBeDefined();
     expect(screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' })).toBeDefined();
@@ -341,14 +390,14 @@ describe('Dashboard', () => {
     const initialChart = screen.getByRole('img', { name: 'Hourly portfolio profit and loss, Last 1m' });
     const initialCoordinates = initialChart.querySelector('polyline')?.getAttribute('points');
     const initialHoldingCoordinates = screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' }).querySelector('polyline')?.getAttribute('points');
-    expect(screen.getByRole('button', { name: 'Last 1m' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Last 1m' }).getAttribute('aria-selected')).toBe('true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 1w' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Last 1w' }));
     const weekChart = screen.getByRole('img', { name: 'Hourly portfolio profit and loss, Last 1w' });
     expect(weekChart.querySelector('polyline')?.getAttribute('points')).not.toBe(initialCoordinates);
     expect(screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' }).querySelector('polyline')?.getAttribute('points')).not.toBe(initialHoldingCoordinates);
-    expect(screen.getByRole('button', { name: 'Last 1w' }).getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: 'Last 1y' }));
+    expect(screen.getByRole('tab', { name: 'Last 1w' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Last 1y' }));
     expect(screen.getByRole('img', { name: 'Hourly portfolio profit and loss, Last 1y' })).toBeDefined();
     expect(screen.getByRole('img', { name: 'MQG.AX hourly profit and loss' }).querySelector('polyline')?.getAttribute('points')).not.toBe(initialHoldingCoordinates);
     await waitForScanCompletion();
@@ -357,12 +406,12 @@ describe('Dashboard', () => {
   it('confirms portfolio deletion and loads the next available portfolio', async () => {
     portfolios = [initialPortfolio, { ...initialPortfolio, id: 2, name: 'Second', holdings: [] }];
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete portfolio' }));
 
     expect(confirmMock).toHaveBeenCalledWith('Delete My watchlist and its watchlist?');
-    await waitFor(() => expect((screen.getByRole('combobox', { name: 'PORTFOLIO' }) as HTMLSelectElement).value).toBe('2'));
+    await waitForPortfolio('Second');
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1', { method: 'DELETE' });
     await waitForScanCompletion();
   });
@@ -373,15 +422,15 @@ describe('Dashboard', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/scan?portfolioId=1'));
     expect(await screen.findByText('Market scan failed')).toBeDefined();
-    expect(screen.getByRole('button', { name: /Scanning market|Refresh signals/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Scanning…|Refresh data/ })).toBeDefined();
   });
 
   it('runs a selected strategy backtest and displays its summary', async () => {
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
     await waitForScanCompletion();
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Backtest strategy' }), { target: { value: 'rsi-14' } });
+    await chooseOption('Backtest strategy', 'RSI (14)');
     fireEvent.click(screen.getByRole('button', { name: 'Run backtest' }));
 
     expect(await screen.findByText('LAST RUN · RSI (14)')).toBeDefined();
@@ -394,7 +443,7 @@ describe('Dashboard', () => {
   it('renders an API error when the backtest cannot run', async () => {
     backtestStatus = 422;
     render(<Dashboard />);
-    await screen.findByRole('option', { name: 'My watchlist' });
+    await waitForPortfolio();
     await waitForScanCompletion();
 
     fireEvent.click(screen.getByRole('button', { name: 'Run backtest' }));
