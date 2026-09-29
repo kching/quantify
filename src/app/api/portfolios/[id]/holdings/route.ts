@@ -1,13 +1,18 @@
 import { addHolding, removeHolding } from '@/core/db';
 import { getCurrentUser } from '@/lib/current-user';
 
+function normalizeAsxSymbol(value: string): string {
+  return value.endsWith('.AX') ? value : `${value}.AX`;
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id: rawId } = await context.params;
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: 'Sign in required.' }, { status: 401 });
   const id = Number(rawId);
   const body = await request.json() as { symbol?: unknown };
-  const symbol = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
+  const symbolInput = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
+  const symbol = symbolInput ? normalizeAsxSymbol(symbolInput) : '';
   if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)) return Response.json({ error: 'Enter a valid ticker, such as QQQ or MQG.AX.' }, { status: 400 });
   try {
     if (user.id === 'admin') await addHolding(id, symbol);

@@ -1,18 +1,26 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { act } from 'react';
 import type { Candle, PerformanceSnapshots, Portfolio, PortfolioTrade, SignalResult } from '@/core/types';
 
-GlobalRegistrator.register();
+if (typeof window === 'undefined') GlobalRegistrator.register();
+const reactTestGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+reactTestGlobal.IS_REACT_ACT_ENVIRONMENT = true;
 
 const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 const { default: Dashboard } = await import('./dashboard');
 
 async function chooseOption(label: string, optionName: string): Promise<void> {
-  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('combobox', { name: label }));
+    await Promise.resolve();
+  });
   const option = await screen.findByRole('option', { name: optionName });
-  fireEvent.pointerDown(option, { pointerType: 'mouse' });
-  fireEvent.click(option);
+  await act(async () => {
+    fireEvent.pointerDown(option, { pointerType: 'mouse' });
+    fireEvent.click(option);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 async function waitForPortfolio(name = 'My watchlist'): Promise<void> {
@@ -178,10 +186,6 @@ afterEach(async () => {
     await new Promise((resolve) => setTimeout(resolve, 1));
     cleanup();
   });
-});
-
-afterAll(() => {
-  GlobalRegistrator.unregister();
 });
 
 describe('Dashboard', () => {
