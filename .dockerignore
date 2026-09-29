@@ -1,0 +1,11 @@
+.git
+.github
+.gitea
+.next
+data
+node_modules
+*.log
+.env*
+Dockerfile
+compose.yml
+README.md

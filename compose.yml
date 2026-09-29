@@ -1,0 +1,17 @@
+services:
+  quantify:
+    image: ${QUANTIFY_IMAGE:-docker.io/your-dockerhub-user/quantify:latest}
+    restart: unless-stopped
+    ports:
+      - "${QUANTIFY_PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      QUANTIFY_DB_PATH: /app/data/quantify.sqlite
+    volumes:
+      - quantify-data:/app/data
+
+volumes:
+  quantify-data:
+    name: ${QUANTIFY_DATA_VOLUME:-quantify-data}
