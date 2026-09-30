@@ -1,6 +1,8 @@
 export type SignalType = 'BUY' | 'SELL' | 'HOLD';
 export type CandleInterval = '1h' | '1d';
 export type TradeSide = 'BUY' | 'SELL';
+export type StrategyParamValue = number | number[] | boolean | boolean[];
+export type StrategyParams = Record<string, StrategyParamValue>;
 
 export interface Candle {
   symbol: string;
@@ -26,7 +28,7 @@ export interface SignalResult {
 export interface SignalStrategy {
   id: string;
   name: string;
-  analyze(symbol: string, candles: readonly Candle[]): SignalResult;
+  analyze(symbol: string, candles: readonly Candle[], params?: StrategyParams): SignalResult;
 }
 
 export interface Portfolio {
@@ -49,6 +51,13 @@ export interface UserProfile {
 export interface PortfolioHolding {
   symbol: string;
   addedAt: number;
+}
+
+export interface HoldingStrategy {
+  portfolioId: number;
+  symbol: string;
+  name: string;
+  params: StrategyParams;
 }
 
 export interface PortfolioTrade {

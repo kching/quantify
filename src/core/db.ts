@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import type { Candle, CandleInterval, HoldingPerformancePoint, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, UserProfile } from './types';
+import type { Candle, CandleInterval, HoldingPerformancePoint, HoldingStrategy, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, StrategyParams, UserProfile } from './types';
 
 const users = sqliteTable('users', {
   id: text('id').primaryKey(), name: text('name').notNull(), email: text('email'), image: text('image'),
@@ -20,6 +20,10 @@ const holdings = sqliteTable('holdings', {
   portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }),
   symbol: text('symbol').notNull(), addedAt: integer('added_at').notNull(),
 }, (table) => [uniqueIndex('holdings_portfolio_symbol').on(table.portfolioId, table.symbol)]);
+const holdingStrategies = sqliteTable('holding_strategies', {
+  portfolioId: integer('portfolio_id').notNull().references(() => portfolios.id, { onDelete: 'cascade' }),
+  symbol: text('symbol').notNull(), name: text('name').notNull(), params: text('params').notNull(),
+}, (table) => [uniqueIndex('holding_strategies_portfolio_symbol').on(table.portfolioId, table.symbol)]);
 const candles = sqliteTable('candles', {
   symbol: text('symbol').notNull(), interval: text('interval').notNull(), timestamp: integer('timestamp').notNull(),
   open: real('open').notNull(), high: real('high').notNull(), low: real('low').notNull(), close: real('close').notNull(), volume: real('volume').notNull(),
@@ -54,7 +58,7 @@ export const TIME_SERIES_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 const dbPath = process.env.QUANTIFY_DB_PATH ?? join(process.cwd(), 'data', 'quantify.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
 const client = createClient({ url: `file:${dbPath}` });
-export const db = drizzle({ client, schema: { users, portfolios, holdings, candles, alerts, trades, cashTransactions, holdingPerformance, portfolioPerformance } });
+export const db = drizzle({ client, schema: { users, portfolios, holdings, holdingStrategies, candles, alerts, trades, cashTransactions, holdingPerformance, portfolioPerformance } });
 
 async function initializeDatabase(): Promise<void> {
   await client.executeMultiple(`
@@ -64,6 +68,7 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, google_subject TEXT UNIQUE, is_anonymous INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
+    CREATE TABLE IF NOT EXISTS holding_strategies (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, PRIMARY KEY(portfolio_id, symbol));
     CREATE TABLE IF NOT EXISTS candles (symbol TEXT NOT NULL, interval TEXT NOT NULL, timestamp INTEGER NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY(symbol, interval, timestamp));
     CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, strategy_id TEXT NOT NULL, signal TEXT NOT NULL, timestamp INTEGER NOT NULL, price REAL NOT NULL, rationale TEXT NOT NULL, indicators TEXT NOT NULL, UNIQUE(portfolio_id, symbol, strategy_id, signal, timestamp));
     CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL, price REAL NOT NULL, brokerage REAL NOT NULL, timestamp INTEGER NOT NULL);
@@ -150,6 +155,56 @@ export async function addHolding(portfolioId: number, symbol: string, userId = '
   await ensureDatabase();
   if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
   await db.insert(holdings).values({ portfolioId, symbol, addedAt: Date.now() }).onConflictDoNothing().run();
+}
+
+function parseStrategyParams(value: string): StrategyParams {
+  const parsed: unknown = JSON.parse(value);
+  if (!isStrategyParams(parsed)) throw new Error('Stored holding strategy parameters are invalid.');
+  return parsed;
+}
+
+function isStrategyParams(value: unknown): value is StrategyParams {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) => {
+    if (typeof entry === 'number' || typeof entry === 'boolean') return true;
+    return Array.isArray(entry) && entry.every((item) => typeof item === 'number' || typeof item === 'boolean');
+  });
+}
+
+function holdingStrategyFromRow(row: { portfolioId: number; symbol: string; name: string; params: string }): HoldingStrategy {
+  return { portfolioId: row.portfolioId, symbol: row.symbol, name: row.name, params: parseStrategyParams(row.params) };
+}
+
+export async function getHoldingStrategy(portfolioId: number, symbol: string): Promise<HoldingStrategy | null> {
+  await ensureDatabase();
+  const row = await db.select().from(holdingStrategies)
+    .where(and(eq(holdingStrategies.portfolioId, portfolioId), eq(holdingStrategies.symbol, symbol))).get();
+  return row ? holdingStrategyFromRow(row) : null;
+}
+
+export async function listHoldingStrategies(portfolioId: number): Promise<HoldingStrategy[]> {
+  await ensureDatabase();
+  const rows = await db.select().from(holdingStrategies).where(eq(holdingStrategies.portfolioId, portfolioId)).orderBy(holdingStrategies.symbol).all();
+  return rows.map(holdingStrategyFromRow);
+}
+
+export async function saveHoldingStrategy(input: HoldingStrategy, userId = 'admin'): Promise<HoldingStrategy> {
+  await ensureDatabase();
+  if (!(await ownsPortfolio(input.portfolioId, userId))) throw new Error('Portfolio not found.');
+  const holding = await db.select({ symbol: holdings.symbol }).from(holdings)
+    .where(and(eq(holdings.portfolioId, input.portfolioId), eq(holdings.symbol, input.symbol))).get();
+  if (!holding) throw new Error('Holding not found.');
+  if (!input.name.trim()) throw new Error('Holding strategy name is required.');
+  const row = await db.insert(holdingStrategies).values({ ...input, name: input.name.trim(), params: JSON.stringify(input.params) })
+    .onConflictDoUpdate({ target: [holdingStrategies.portfolioId, holdingStrategies.symbol], set: { name: input.name.trim(), params: JSON.stringify(input.params) } })
+    .returning().get();
+  return holdingStrategyFromRow(row);
+}
+
+export async function removeHoldingStrategy(portfolioId: number, symbol: string, userId = 'admin'): Promise<void> {
+  await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
+  await db.delete(holdingStrategies).where(and(eq(holdingStrategies.portfolioId, portfolioId), eq(holdingStrategies.symbol, symbol))).run();
 }
 
 export async function listTrades(portfolioId: number): Promise<PortfolioTrade[]> {
@@ -280,6 +335,7 @@ export async function removeHolding(portfolioId: number, symbol: string, userId 
   await ensureDatabase();
   if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
   await db.delete(holdings).where(sql`${holdings.portfolioId} = ${portfolioId} AND ${holdings.symbol} = ${symbol}`).run();
+  await db.delete(holdingStrategies).where(sql`${holdingStrategies.portfolioId} = ${portfolioId} AND ${holdingStrategies.symbol} = ${symbol}`).run();
 }
 
 export async function getCandles(symbol: string, interval: CandleInterval): Promise<Candle[]> {

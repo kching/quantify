@@ -28,6 +28,14 @@ The backtest panel can run either Klinger or RSI over the same most recent year 
 - `src/app/api/` contains Next.js route handlers for portfolios, holdings, market scans, alerts, and backtests.
 - The SQLite schema includes a user key on user-owned tables. Google-authenticated profiles live in the existing `users` table and every portfolio API operation is owner-scoped.
 
+### Future scope: separate strategy worker
+
+Strategy execution should eventually move into a separate strategy worker so strategies can be discovered, added, updated, and reloaded independently of the Next.js application bundle. The worker should support strategies implemented in either TypeScript or Python and communicate with the application through a small JSON-based RPC or queue protocol.
+
+The worker should load strategies from an external plugin directory using a manifest that contains at least the strategy name, runtime, entrypoint, version or content hash, and supported parameter metadata. `HoldingStrategy` would continue to persist the selected strategy name and per-holding JSON parameters, while the worker would resolve the name to the corresponding plugin. Plugin failures should be isolated from the web process, and the worker should support refreshing its plugin catalog without restarting the Next.js server.
+
+Strategies supplied by untrusted users must not execute with unrestricted application or host access. They should run in a sandboxed worker or isolated service with restricted filesystem, network, process, and resource permissions. Suitable execution options include a hardened subprocess/container boundary, WebAssembly for compatible TypeScript code, or another restricted execution environment for Python. Plugin validation, dependency allowlists, timeouts, memory/CPU limits, and audit logging should be part of the design before accepting untrusted strategy code.
+
 Yahoo Finance chart data is accessed through its public chart endpoint. Data availability, intraday retention, and symbol coverage are controlled by Yahoo Finance.
 
 ## Authentication

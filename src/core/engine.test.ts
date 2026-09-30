@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { analyzeSymbol, strategies } from './engine';
+import { analyzeSymbol, loadStrategy, strategies } from './engine';
 import type { Candle } from './types';
 
 describe('core strategy engine', () => {
@@ -21,5 +21,11 @@ describe('core strategy engine', () => {
     expect(results).toHaveLength(2);
     expect(results.map((result) => result.strategyId)).toEqual(['klinger-oscillator', 'rsi-14']);
     expect(results.every((result) => result.symbol === 'TEST.AX')).toBe(true);
+  });
+
+  it('dynamically loads a strategy by holding strategy name', async () => {
+    const strategy = await loadStrategy('RSI (14)');
+
+    expect(strategy?.id).toBe('rsi-14');
   });
 });

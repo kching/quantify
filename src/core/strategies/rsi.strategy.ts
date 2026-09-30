@@ -1,24 +1,32 @@
-import type { Candle, SignalResult, SignalStrategy } from '../types';
+import type { Candle, SignalResult, SignalStrategy, StrategyParamValue, StrategyParams } from '../types';
 
-function calculateRsi(candles: readonly Candle[], period = 14): number[] {
+export type RsiParams = StrategyParams & {
+  period?: number;
+};
+
+function period(value: StrategyParamValue | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function calculateRsi(candles: readonly Candle[], periodLength = 14): number[] {
   const closes = candles.map((candle) => candle.close);
   const result = Array<number>(closes.length).fill(50);
-  if (closes.length <= period) return result;
+  if (closes.length <= periodLength) return result;
   let gain = 0;
   let loss = 0;
-  for (let i = 1; i <= period; i += 1) {
+  for (let i = 1; i <= periodLength; i += 1) {
     const change = closes[i] - closes[i - 1];
     gain += Math.max(change, 0);
     loss += Math.max(-change, 0);
   }
-  let avgGain = gain / period;
-  let avgLoss = loss / period;
+  let avgGain = gain / periodLength;
+  let avgLoss = loss / periodLength;
   const value = (): number => avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
-  result[period] = value();
-  for (let i = period + 1; i < closes.length; i += 1) {
+  result[periodLength] = value();
+  for (let i = periodLength + 1; i < closes.length; i += 1) {
     const change = closes[i] - closes[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(change, 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + Math.max(-change, 0)) / period;
+    avgGain = (avgGain * (periodLength - 1) + Math.max(change, 0)) / periodLength;
+    avgLoss = (avgLoss * (periodLength - 1) + Math.max(-change, 0)) / periodLength;
     result[i] = value();
   }
   return result;
@@ -28,8 +36,9 @@ export class RsiStrategy implements SignalStrategy {
   readonly id = 'rsi-14';
   readonly name = 'RSI (14)';
 
-  analyze(symbol: string, candles: readonly Candle[]): SignalResult {
-    const rsi = calculateRsi(candles);
+  analyze(symbol: string, candles: readonly Candle[], params: StrategyParams = {}): SignalResult {
+    const { period: periodParam } = params as RsiParams;
+    const rsi = calculateRsi(candles, period(periodParam, 14));
     const i = candles.length - 1;
     const prior = rsi[i - 1] ?? 50;
     const current = rsi[i] ?? 50;

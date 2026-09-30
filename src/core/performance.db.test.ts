@@ -24,6 +24,25 @@ afterAll(async () => {
 });
 
 describe('trade and performance persistence', () => {
+  it('persists holding strategies independently for the same ticker in different portfolios', async () => {
+    const firstPortfolio = await database.createPortfolio('Klinger watchlist');
+    const secondPortfolio = await database.createPortfolio('RSI watchlist');
+    await database.addHolding(firstPortfolio.id, 'TEST.AX');
+    await database.addHolding(secondPortfolio.id, 'TEST.AX');
+
+    await expect(database.saveHoldingStrategy({ portfolioId: firstPortfolio.id, symbol: 'TEST.AX', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } })).resolves.toMatchObject({
+      portfolioId: firstPortfolio.id, symbol: 'TEST.AX', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
+    });
+    await database.saveHoldingStrategy({ portfolioId: secondPortfolio.id, symbol: 'TEST.AX', name: 'rsi-14', params: { period: 7 } });
+
+    expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toMatchObject({ name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } });
+    expect(await database.listHoldingStrategies(secondPortfolio.id)).toEqual([{ portfolioId: secondPortfolio.id, symbol: 'TEST.AX', name: 'rsi-14', params: { period: 7 } }]);
+
+    await database.removeHolding(firstPortfolio.id, 'TEST.AX');
+    expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toBeNull();
+    expect(await database.getHoldingStrategy(secondPortfolio.id, 'TEST.AX')).not.toBeNull();
+  });
+
   it('records a buy and sell ledger, prevents overselling, and captures hourly snapshots', async () => {
     const [portfolio] = await database.listPortfolios();
     expect(portfolio.holdings).toHaveLength(5);
