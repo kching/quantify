@@ -47,7 +47,7 @@ The local Google OAuth callback URL is `http://localhost:3000/api/auth/callback/
 The production image is built from the multi-stage `Dockerfile` and runs the Next.js standalone server as an unprivileged user. The SQLite database lives in `/app/data`; use the included `compose.yml` so it remains in a named Docker volume:
 
 ```bash
-QUANTIFY_IMAGE=docker.io/your-dockerhub-user/quantify:latest docker compose up -d
+QUANTIFY_IMAGE=docker.local.curiouscoding.dev/quantify:latest docker compose up -d
 ```
 
 Set `QUANTIFY_DATA_VOLUME` to use a different named volume, and set `QUANTIFY_PORT` to change the host port. When building the image yourself, `APP_UID` and `APP_GID` are configurable Docker build arguments and default to `1001`:
@@ -58,4 +58,4 @@ docker build --build-arg APP_UID=1001 --build-arg APP_GID=1001 -t quantify:local
 
 Copy `.env.example` to `.env` and set `AUTH_SECRET`, `AUTH_GOOGLE_ID`, and `AUTH_GOOGLE_SECRET` before starting the compose service. The published image is built for `linux/amd64`.
 
-The Gitea workflow runs lint, tests, and a Next.js build on pushes to `main` and pull requests. It publishes `release-X.Y.Z` tags as both `X.Y.Z` and `latest` to Docker Hub. Configure the repository variable `DOCKERHUB_USERNAME` and the repository secret `DOCKERHUB_TOKEN` (a Docker Hub access token), then push a tag such as `release-1.0.0`.
+The Gitea workflow runs lint, tests, and a Next.js build on pushes to `main` and pull requests. It publishes `release-X.Y.Z` tags as both `X.Y.Z` and `latest` to `docker.local.curiouscoding.dev`. Configure the repository secrets `REGISTRY_USERNAME` and `REGISTRY_PASSWORD`, then push a tag such as `release-1.0.0`.

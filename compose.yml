@@ -1,6 +1,6 @@
 services:
   quantify:
-    image: ${QUANTIFY_IMAGE:-docker.io/your-dockerhub-user/quantify:latest}
+    image: ${QUANTIFY_IMAGE:-docker.local.curiouscoding.dev/quantify:latest}
     restart: unless-stopped
     ports:
       - "${QUANTIFY_PORT:-3000}:3000"
