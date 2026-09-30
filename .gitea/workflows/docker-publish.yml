@@ -46,27 +46,33 @@ jobs:
             commit_range="$COMMIT_SHA"
           fi
 
+          major_pattern='BREAKING[[:space:]]CHANGE|BREAKING-CHANGE|^[[:alnum:]_-]+(\([^)]*\))?!:'
+          minor_pattern='^feat(\([^)]*\))?:'
+          patch_pattern='^(fix|perf|refactor|revert)(\([^)]*\))?:'
+
           bump="none"
           while IFS= read -r subject; do
             [[ -z "$subject" ]] && continue
-            if [[ "$subject" =~ BREAKING[[:space:]]CHANGE|BREAKING-CHANGE|^[[:alnum:]_-]+(\([^)]*\))?!: ]]; then
+            if [[ "$subject" =~ $major_pattern ]]; then
               bump="major"
               break
-            elif [[ "$subject" =~ ^feat(\([^)]*\))?: ]]; then
+            elif [[ "$subject" =~ $minor_pattern ]]; then
               bump="minor"
-            elif [[ "$subject" =~ ^(fix|perf|refactor|revert)(\([^)]*\))?: ]] && [[ "$bump" == "none" ]]; then
+            elif [[ "$subject" =~ $patch_pattern ]] && [[ "$bump" == "none" ]]; then
               bump="patch"
             fi
           done < <(git log --format='%B' "$commit_range")
 
           current_version="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)')"
-          if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          semver_pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
+          if [[ ! "$current_version" =~ $semver_pattern ]]; then
             echo "package.json version must be a stable SemVer value, got $current_version" >&2
             exit 1
           fi
 
           version_base="$current_version"
-          if [[ "$previous_release" =~ release-v?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+          release_version_pattern='release-v?([0-9]+\.[0-9]+\.[0-9]+)'
+          if [[ "$previous_release" =~ $release_version_pattern ]]; then
             version_base="${BASH_REMATCH[1]}"
           fi
 
