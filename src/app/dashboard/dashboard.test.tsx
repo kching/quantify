@@ -207,14 +207,14 @@ describe('Dashboard', () => {
 
     await waitForPortfolio();
     expect(screen.getByRole('link', { name: 'Overview' }).className).toContain('active');
-    expect(screen.getByRole('link', { name: 'P&L performance' }).className).not.toContain('active');
+    expect(screen.getByRole('link', { name: 'Portfolio Performance' }).className).not.toContain('active');
 
     await act(async () => {
       window.location.hash = '#performance';
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(screen.getByRole('link', { name: 'P&L performance' }).className).toContain('active');
+    expect(screen.getByRole('link', { name: 'Portfolio Performance' }).className).toContain('active');
     expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('active');
   });
 
