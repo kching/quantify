@@ -391,7 +391,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
           <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
         </section>
 
-        <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span><span>Local only · Candles stored on this device</span></footer>
+        <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span></footer>
         </>}
       </div>
     </main>
