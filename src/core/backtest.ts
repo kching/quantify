@@ -1,6 +1,6 @@
-import type { BacktestResult, BacktestTrade, Candle, SignalStrategy } from './types';
+import type { BacktestResult, BacktestTrade, Candle, SignalStrategy, StrategyParams } from './types';
 
-export function runBacktest(symbol: string, candles: readonly Candle[], strategy: SignalStrategy, initialBalance = 10_000): BacktestResult {
+export function runBacktest(symbol: string, candles: readonly Candle[], strategy: SignalStrategy, initialBalance = 10_000, params: StrategyParams = {}): BacktestResult {
   let balance = initialBalance;
   let peak = initialBalance;
   let maxDrawdownPct = 0;
@@ -8,7 +8,7 @@ export function runBacktest(symbol: string, candles: readonly Candle[], strategy
   const trades: BacktestTrade[] = [];
   for (let index = 60; index < candles.length; index += 1) {
     const current = candles[index];
-    const signal = strategy.analyze(symbol, candles.slice(0, index)).signal;
+    const signal = strategy.analyze(symbol, candles.slice(0, index), params).signal;
     if (!entry && signal === 'BUY') entry = { ...current, close: current.open };
     else if (entry && signal === 'SELL') {
       const pnlPct = current.open / entry.close - 1;

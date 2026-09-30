@@ -2,6 +2,19 @@
 .research-section { margin-top: 15px; }
 .backtest-panel .section-card-header { align-items: center; }
 .backtest-form { display: grid; grid-template-columns: minmax(140px, .7fr) minmax(150px, .7fr) auto; gap: 9px; }
+.signal-form, .save-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.signal-form label, .save-form label { display: flex; flex-direction: column; gap: 5px; color: #7f8b9c; font-size: 10px; font-weight: 750; letter-spacing: .55px; text-transform: uppercase; }
+.signal-form .inline-flex, .save-form .inline-flex { width: 100%; }
+.signal-save-panel, .saved-signals-panel { margin-top: 15px; }
+.section-icon { color: #8c98a8; }
+.save-form { grid-template-columns: 1fr 1fr auto; }
+.save-message { margin: 12px 0 0; color: #657387; font-size: 12px; }
+.saved-signals { display: grid; gap: 8px; }
+.saved-signal { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid #e9edf3; border-radius: 7px; background: #fafbfd; }
+.saved-signal strong, .saved-signal span { display: block; }
+.saved-signal strong { color: #2d3b51; font-size: 13px; }
+.saved-signal span { margin-top: 3px; color: #8995a6; font-size: 11px; }
+.saved-actions { display: flex; gap: 3px; }
 .backtest-result-label { margin: 17px 0 8px; color: #8995a6; font-size: 10px; font-weight: 750; letter-spacing: .65px; }
 .backtest-results { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
 .backtest-results > div { display: flex; flex-direction: column; gap: 5px; padding: 11px; border: 1px solid #e9edf3; border-radius: 7px; background: #fafbfd; }
@@ -9,8 +22,7 @@
 .backtest-results strong { color: #2d3b51; font-size: 17px; font-variant-numeric: tabular-nums; }
 .method-note { margin: 12px 0 0; color: #8793a4; font-size: 11px; line-height: 1.55; }
 @media (max-width: 520px) {
-  .backtest-form { grid-template-columns: minmax(0, 1fr); }
+  .backtest-form, .signal-form, .save-form { grid-template-columns: minmax(0, 1fr); }
   .backtest-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 }
-
