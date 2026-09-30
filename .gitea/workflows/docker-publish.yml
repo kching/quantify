@@ -8,10 +8,6 @@ on:
       - "release-*"
   pull_request:
 
-env:
-  REGISTRY: docker.local.curiouscoding.dev
-  IMAGE_NAME: quantify
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -61,19 +57,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to private registry
-        if: gitea.event_name == 'push' && startsWith(gitea.ref, 'refs/tags/release-')
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: docker.local.curiouscoding.dev/quantify
           tags: |
             type=match,pattern=release-(.*),group=1
             type=raw,value=latest
