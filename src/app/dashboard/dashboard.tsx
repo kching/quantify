@@ -381,6 +381,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       </header>
 
       <div className="dashboard-content">
+        {!portfolios.length ? <section className="welcome-panel" aria-labelledby="welcome-title"><div className="welcome-panel-content"><p className="section-kicker">WELCOME TO QUANTIFY</p><h1 id="welcome-title">Start by creating your first portfolio.</h1><p>What would you like to call it?</p><form className="welcome-form" aria-label="Create your first portfolio" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="welcome-portfolio-name">PORTFOLIO NAME</label><div className="welcome-form-controls"><Input id="welcome-portfolio-name" aria-label="Portfolio name" placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></div></section> : <>
         <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the market, refreshed against your portfolio.</p></div>
           <div className="portfolio-picker"><label htmlFor="portfolio-picker">ACTIVE PORTFOLIO</label><SelectControl id="portfolio-picker" value={portfolioId === null ? '' : String(portfolioId)} displayValue={currentPortfolio?.name} ariaLabel="PORTFOLIO" placeholder="Select a portfolio" className="portfolio-select" onValueChange={(value) => { if (value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(value) || null); setPerformance(emptyPerformance); setScan(null); setAlerts([]); setLastScannedAt(null); setTradePage(1); setTradeFilter(''); } }}>
             {portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}<SelectOption value="new">＋ New portfolio…</SelectOption>
@@ -414,6 +415,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         </section>
 
         <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span><span>Local only · Candles stored on this device</span></footer>
+        </>}
       </div>
     </main>
 

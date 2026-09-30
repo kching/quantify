@@ -236,20 +236,23 @@ describe('Dashboard', () => {
     await waitForScanCompletion();
   });
 
-  it('shows an empty portfolio state and offers a way to create a portfolio', async () => {
+  it('shows a first-portfolio welcome screen instead of dashboard content', async () => {
     portfolios = [];
     render(<Dashboard />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios'));
     await act(async () => { await Promise.resolve(); });
-    expect(await screen.findByText('Create a portfolio to begin your market scan.')).toBeDefined();
-    expect(screen.getByText('Add assets to see hourly price context.')).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'Start by creating your first portfolio.' })).toBeDefined();
+    expect(screen.getByText('What would you like to call it?')).toBeDefined();
+    expect(screen.getByRole('form', { name: 'Create your first portfolio' })).toBeDefined();
+    expect(screen.getByRole('textbox', { name: 'Portfolio name' })).toBeDefined();
+    expect(screen.queryByText('Good trading starts with good signals.')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Record a trade' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'ASX ticker' })).toBeNull();
-    fireEvent.click(screen.getByRole('combobox', { name: 'PORTFOLIO' }));
-    expect(await screen.findByRole('option', { name: '＋ New portfolio…' })).toBeDefined();
-    fireEvent.keyDown(screen.getByRole('combobox', { name: 'PORTFOLIO' }), { key: 'Escape' });
-    expect(screen.queryByRole('textbox', { name: 'New portfolio name' })).toBeNull();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith('/api/scan'))).toBe(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Portfolio name' }), { target: { value: 'First portfolio' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create portfolio' }));
+    await waitForPortfolio('First portfolio');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('creates a portfolio and selects it', async () => {
