@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import Research from './Research';
+import Research from './research';
 import { getCurrentUser } from '@/lib/current-user';
 import { listPortfolios } from '@/core/db';
 

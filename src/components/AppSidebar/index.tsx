@@ -56,8 +56,13 @@ export default function AppSidebar({ page, navItems = [], hasPortfolio, user }: 
       };
     }
     let sectionTimer: number | undefined;
+    const intersectingSections = new Map<string, IntersectionObserverEntry>();
     const observer = new IntersectionObserver((entries) => {
-      const visibleSections = entries.filter((entry) => entry.isIntersecting).sort((left, right) => right.intersectionRatio - left.intersectionRatio);
+      for (const entry of entries) {
+        if (entry.isIntersecting) intersectingSections.set(entry.target.id, entry);
+        else intersectingSections.delete(entry.target.id);
+      }
+      const visibleSections = [...intersectingSections.values()].sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
       const activeSection = visibleSections[0]?.target.id;
       if (!activeSection || !sections.has(activeSection)) return;
       if (sectionTimer) window.clearTimeout(sectionTimer);
@@ -65,7 +70,7 @@ export default function AppSidebar({ page, navItems = [], hasPortfolio, user }: 
         setSection((currentSection) => currentSection === activeSection ? currentSection : activeSection);
         if (window.location.hash !== `#${activeSection}`) window.history.replaceState(null, '', `#${activeSection}`);
       }, 150);
-    }, { rootMargin: '-20% 0px -60% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] });
+    }, { rootMargin: '-80px 0px -75% 0px', threshold: [0, 0.25, 0.5, 0.75, 1] });
     for (const sectionId of sections) {
       const element = document.getElementById(sectionId);
       if (element) observer.observe(element);
@@ -76,7 +81,7 @@ export default function AppSidebar({ page, navItems = [], hasPortfolio, user }: 
       window.removeEventListener('hashchange', updateSection);
       window.removeEventListener('popstate', updateSection);
     };
-  }, [page]);
+  }, [hasPortfolio, page]);
 
   return <Sidebar data-collapsed={collapsed}>
     <SidebarHeader>

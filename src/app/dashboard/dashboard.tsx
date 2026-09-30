@@ -349,13 +349,13 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     ]}/>}
 
     <main className="app-main">
-      <header className="app-header">
+      {portfoliosLoaded && <header className="app-header">
         <div/>
         <div className="header-actions">
           <span className={`connection-status connection-status-${connectionStatus}`} role="status" aria-live="polite"><i aria-hidden="true"/>{connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'connecting' ? 'Connecting' : 'Disconnected'}</span>
           <Button variant="outline" size="icon" className="refresh-button rounded-full" onClick={() => void refresh()} disabled={loading || !portfolioId} aria-label={loading ? 'Scanning…' : 'Refresh data'} title={loading ? 'Scanning…' : 'Refresh data'}>{loading ? <LoaderCircle className="size-4 animate-spin"/> : <RefreshCw className="size-4"/>}</Button>
         </div>
-      </header>
+      </header>}
 
       <div className="dashboard-content">
         {!portfoliosLoaded ? <div className="portfolio-loading" role="status" aria-label="Loading portfolios"><div className="loading-dots" aria-hidden="true"><span/><span/><span/></div></div> : !portfolios.length ? <section className="welcome-panel" aria-labelledby="welcome-title"><div className="welcome-panel-content"><p className="section-kicker">WELCOME TO QUANTIFY</p><h1 id="welcome-title">Start by creating your first portfolio.</h1><p>What would you like to call it?</p><form className="welcome-form" aria-label="Create your first portfolio" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="welcome-portfolio-name">PORTFOLIO NAME</label><div className="welcome-form-controls"><Input id="welcome-portfolio-name" aria-label="Portfolio name" placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></div></section> : <>
