@@ -7,6 +7,7 @@ on:
     tags:
       - "release-*"
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -71,7 +72,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          push: ${{ gitea.event_name == 'push' && startsWith(gitea.ref, 'refs/tags/release-') }}
+          push: ${{ gitea.event_name == 'workflow_dispatch' || (gitea.event_name == 'push' && startsWith(gitea.ref, 'refs/tags/release-')) }}
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
