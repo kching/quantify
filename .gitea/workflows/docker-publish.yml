@@ -9,6 +9,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  REGISTRY: docker.local.curiouscoding.dev
+  APPLICATION_NAME: quantify
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -62,7 +66,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.local.curiouscoding.dev/quantify
+          images: ${{ env.REGISTRY }}/${{ env.APPLICATION_NAME }}
           tags: |
             type=match,pattern=release-(.*),group=1
             type=raw,value=latest
