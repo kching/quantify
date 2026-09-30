@@ -15,8 +15,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const symbol = symbolInput ? normalizeAsxSymbol(symbolInput) : '';
   if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)) return Response.json({ error: 'Enter a valid ticker, such as QQQ or MQG.AX.' }, { status: 400 });
   try {
-    if (user.id === 'admin') await addHolding(id, symbol);
-    else await addHolding(id, symbol, user.id);
+    await addHolding(id, symbol, user.id);
     return Response.json({ ok: true }, { status: 201 });
   } catch {
     return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
@@ -31,7 +30,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   const symbol = new URL(request.url).searchParams.get('symbol')?.trim().toUpperCase() ?? '';
   if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)) return Response.json({ error: 'Invalid portfolio or ticker.' }, { status: 400 });
   try {
-    if (user.id === 'admin') await removeHolding(id, symbol); else await removeHolding(id, symbol, user.id);
+    await removeHolding(id, symbol, user.id);
   } catch { return Response.json({ error: 'Portfolio not found.' }, { status: 404 }); }
   return Response.json({ ok: true });
 }

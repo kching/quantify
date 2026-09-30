@@ -31,7 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
   try {
     const input = { portfolioId, type: type as CashTransactionType, amount, timestamp, note };
-    const transaction = user.id === 'admin' ? await recordCashTransaction(input) : await recordCashTransaction(input, user.id);
+    const transaction = await recordCashTransaction(input, user.id);
     return Response.json({ transaction }, { status: 201 });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Unable to record this cash transaction.';

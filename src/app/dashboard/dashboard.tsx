@@ -26,40 +26,10 @@ interface CashPayload { transactions: PortfolioCashTransaction[]; total: number;
 const emptyPerformance: PerformanceSnapshots = { holdings: [], portfolio: [] };
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 const dateTime = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
-/* Performance visualization is extracted to PortfolioPerformance. */
-/*
-function PerformanceChart({ points, rangeLabel }: { points: PerformanceSnapshots['portfolio']; rangeLabel: string }) {
-  if (points.length < 2) return <div className="chart-empty">Hourly P&amp;L history will appear as new candles arrive after a trade is recorded.</div>;
-  const values = points.map((point) => point.profitLoss);
-  const min = Math.min(0, ...values);
-  const max = Math.max(0, ...values);
-  const range = max - min || 1;
-  const coords = values.map((value, index) => `${(index / (values.length - 1)) * 600},${90 - ((value - min) / range) * 80}`).join(' ');
-  const zeroY = 90 - ((0 - min) / range) * 80;
-  return <svg className="price-chart pnl-chart" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label={`Hourly portfolio profit and loss, ${rangeLabel}`}>
-    <line x1="0" x2="600" y1={zeroY} y2={zeroY} stroke="#64748b" strokeDasharray="4 4"/>
-    <polyline points={coords} fill="none" stroke={values.at(-1)! >= 0 ? '#34d399' : '#fb7185'} strokeWidth="2" vectorEffect="non-scaling-stroke"/>
-  </svg>;
-}
-
-function HoldingPulseChart({ symbol, points }: { symbol: string; points: HoldingPerformancePoint[] }) {
-  const ordered = [...points].sort((left, right) => left.timestamp - right.timestamp);
-  if (ordered.length < 2) return <span className="holding-pulse-empty" aria-label={`${symbol} P&L history pending`}>—</span>;
-  const values = ordered.map((point) => point.profitLoss);
-  const min = Math.min(0, ...values);
-  const max = Math.max(0, ...values);
-  const range = max - min || 1;
-  const coords = values.map((value, index) => `${(index / (values.length - 1)) * 100},${90 - ((value - min) / range) * 80}`).join(' ');
-  const zeroY = 90 - ((0 - min) / range) * 80;
-  return <svg className="holding-pulse-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} hourly profit and loss`}>
-    <line x1="0" x2="100" y1={zeroY} y2={zeroY} stroke="#cbd5e1" strokeDasharray="3 3"/>
-    <polyline points={coords} fill="none" stroke={values.at(-1)! >= 0 ? '#34a879' : '#df7078'} strokeWidth="3" vectorEffect="non-scaling-stroke"/>
-  </svg>;
-}
-*/
 
 export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 'image'> }) {
   const [portfolios, setPortfolios] = useState<PortfolioWithHoldings[]>([]);
+  const [portfoliosLoaded, setPortfoliosLoaded] = useState(false);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
   const [scan, setScan] = useState<ScanPayload | null>(null);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -97,6 +67,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     const response = await fetch('/api/portfolios');
     const body = await response.json() as { portfolios: PortfolioWithHoldings[] };
     setPortfolios(body.portfolios);
+    setPortfoliosLoaded(true);
     if (selectFirst) {
       setPortfolioId(body.portfolios[0]?.id ?? null);
       setPerformance(emptyPerformance);
@@ -369,7 +340,13 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   const latestPortfolioPerformance = performance.portfolio.at(-1);
 
   return <div className="app-shell" id="top">
-    <AppSidebar page="dashboard" user={user}/>
+    {portfoliosLoaded && <AppSidebar page="dashboard" hasPortfolio={portfolios.length > 0} user={user} navItems={[
+      {id: 'overview', label: 'Overview', icon:'layout-dashboard', href:'/dashboard#overview'},
+      {id: 'portfolio', label: 'Portfolio Signals', icon:'activity', href:'/dashboard#portfolio'},
+      {id: 'performance', label: 'Portfolio Performance', icon:'bar-chart-3', href:'/dashboard#performance'},
+      {id: 'ledger', label: 'Trade & Cash Ledger', icon:'wallet', href:'/dashboard#ledger'},
+      {id: 'research', label: 'Strategy Research', icon:'microscope', href:'/research'}
+    ]}/>}
 
     <main className="app-main">
       <header className="app-header">
@@ -381,7 +358,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       </header>
 
       <div className="dashboard-content">
-        {!portfolios.length ? <section className="welcome-panel" aria-labelledby="welcome-title"><div className="welcome-panel-content"><p className="section-kicker">WELCOME TO QUANTIFY</p><h1 id="welcome-title">Start by creating your first portfolio.</h1><p>What would you like to call it?</p><form className="welcome-form" aria-label="Create your first portfolio" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="welcome-portfolio-name">PORTFOLIO NAME</label><div className="welcome-form-controls"><Input id="welcome-portfolio-name" aria-label="Portfolio name" placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></div></section> : <>
+        {!portfoliosLoaded ? <div className="portfolio-loading" role="status" aria-label="Loading portfolios"><div className="loading-dots" aria-hidden="true"><span/><span/><span/></div></div> : !portfolios.length ? <section className="welcome-panel" aria-labelledby="welcome-title"><div className="welcome-panel-content"><p className="section-kicker">WELCOME TO QUANTIFY</p><h1 id="welcome-title">Start by creating your first portfolio.</h1><p>What would you like to call it?</p><form className="welcome-form" aria-label="Create your first portfolio" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="welcome-portfolio-name">PORTFOLIO NAME</label><div className="welcome-form-controls"><Input id="welcome-portfolio-name" aria-label="Portfolio name" placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></div></section> : <>
         <section className="page-heading" id="overview"><div><p className="section-kicker">YOUR MARKET, IN FOCUS</p><h1>Good trading starts with <span>good signals.</span></h1><p className="page-subtitle">A considered view of the market, refreshed against your portfolio.</p></div>
           <div className="portfolio-picker"><label htmlFor="portfolio-picker">ACTIVE PORTFOLIO</label><SelectControl id="portfolio-picker" value={portfolioId === null ? '' : String(portfolioId)} displayValue={currentPortfolio?.name} ariaLabel="PORTFOLIO" placeholder="Select a portfolio" className="portfolio-select" onValueChange={(value) => { if (value === 'new') setPortfolioDialogOpen(true); else { setPortfolioId(Number(value) || null); setPerformance(emptyPerformance); setScan(null); setAlerts([]); setLastScannedAt(null); setTradePage(1); setTradeFilter(''); } }}>
             {portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}<SelectOption value="new">＋ New portfolio…</SelectOption>

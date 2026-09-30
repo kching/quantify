@@ -1,59 +1,87 @@
-name: Test, build and publish Docker image
+name: Publish Docker image
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "release-*"
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run lint
-        run: bun run lint
-
-      - name: Run tests
-        run: bun test
-
-  build:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build Next.js application
-        run: bun run build
-
   docker:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Calculate application version from Conventional Commits
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ gitea.event_name }}
+          COMMIT_SHA: ${{ gitea.sha }}
+          REF_NAME: ${{ gitea.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            base_ref="${COMMIT_SHA}^"
+          else
+            base_ref="HEAD"
+          fi
+
+          previous_release="$(git describe --tags --match='release-*' --abbrev=0 "$base_ref" 2>/dev/null || true)"
+          if [[ -n "$previous_release" ]]; then
+            commit_range="${previous_release}..${COMMIT_SHA}"
+          else
+            commit_range="$COMMIT_SHA"
+          fi
+
+          bump="none"
+          while IFS= read -r subject; do
+            [[ -z "$subject" ]] && continue
+            if [[ "$subject" =~ BREAKING[[:space:]]CHANGE|BREAKING-CHANGE|^[[:alnum:]_-]+(\([^)]*\))?!: ]]; then
+              bump="major"
+              break
+            elif [[ "$subject" =~ ^feat(\([^)]*\))?: ]]; then
+              bump="minor"
+            elif [[ "$subject" =~ ^(fix|perf|refactor|revert)(\([^)]*\))?: ]] && [[ "$bump" == "none" ]]; then
+              bump="patch"
+            fi
+          done < <(git log --format='%B' "$commit_range")
+
+          current_version="$(bun -e 'console.log(JSON.parse(await Bun.file("package.json").text()).version)')"
+          if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json version must be a stable SemVer value, got $current_version" >&2
+            exit 1
+          fi
+
+          version_base="$current_version"
+          if [[ "$previous_release" =~ release-v?([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            version_base="${BASH_REMATCH[1]}"
+          fi
+
+          IFS=. read -r major minor patch <<< "$version_base"
+          case "$bump" in
+            major) ((major += 1)); minor=0; patch=0 ;;
+            minor) ((minor += 1)); patch=0 ;;
+            patch) ((patch += 1)) ;;
+            none) echo "No versioned Conventional Commits found in $commit_range"; exit 1 ;;
+          esac
+
+          version="$major.$minor.$patch"
+          VERSION="$version" bun -e 'const file = Bun.file("package.json"); const packageJson = JSON.parse(await file.text()); packageJson.version = process.env.VERSION; await Bun.write(file, `${JSON.stringify(packageJson, null, 2)}\n`);'
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Calculated $version ($bump) from ${previous_release:-repository start} to $REF_NAME"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -78,7 +106,7 @@ jobs:
         with:
           images: ${{ steps.vars.outputs.registry }}/${{ steps.vars.outputs.application_name }}
           tags: |
-            type=match,pattern=release-(.*),group=1
+            type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push Docker image
@@ -86,7 +114,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          push: ${{ gitea.event_name == 'workflow_dispatch' || (gitea.event_name == 'push' && startsWith(gitea.ref, 'refs/tags/release-')) }}
+          push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

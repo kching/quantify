@@ -3,10 +3,12 @@ import { runBacktest } from '@/core/backtest';
 import { strategies } from '@/core/engine';
 import { fetchYahooCandles } from '@/core/providers/yahoo.provider';
 import type { CandleInterval } from '@/core/types';
+import { getCurrentUser } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request): Promise<Response> {
+  if (!(await getCurrentUser())) return Response.json({ error: 'Sign in required.' }, { status: 401 });
   const query = new URL(request.url).searchParams;
   const symbol = query.get('symbol')?.trim().toUpperCase() ?? '';
   const strategyId = query.get('strategy') ?? 'klinger-oscillator';

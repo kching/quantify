@@ -146,7 +146,7 @@ describe('API route handlers', () => {
       const response = await portfoliosRoute.POST(request('/api/portfolios', 'POST', { name: 'Growth' }));
       expect(response.status).toBe(201);
       expect((await payload(response)).portfolio).toMatchObject({ name: 'Growth', holdings: [] });
-      expect(createPortfolio).toHaveBeenCalledWith('Growth');
+      expect(createPortfolio).toHaveBeenCalledWith('Growth', 'admin');
     });
 
     it('rejects duplicate portfolio names', async () => {
@@ -161,7 +161,7 @@ describe('API route handlers', () => {
       const response = await portfolioRoute.DELETE(request('/api/portfolios/1', 'DELETE'), context('1'));
       expect(response.status).toBe(200);
       expect(await payload(response)).toEqual({ ok: true });
-      expect(deletePortfolio).toHaveBeenCalledWith(1);
+      expect(deletePortfolio).toHaveBeenCalledWith(1, 'admin');
     });
   });
 
@@ -171,7 +171,7 @@ describe('API route handlers', () => {
       expect(invalid.status).toBe(400);
       const response = await holdingsRoute.POST(request('/api/portfolios/1/holdings', 'POST', { symbol: ' csl ' }), context('1'));
       expect(response.status).toBe(201);
-      expect(addHolding).toHaveBeenCalledWith(1, 'CSL.AX');
+      expect(addHolding).toHaveBeenCalledWith(1, 'CSL.AX', 'admin');
     });
 
     it('returns not found when adding to an unknown portfolio', async () => {
@@ -183,7 +183,7 @@ describe('API route handlers', () => {
       expect((await holdingsRoute.DELETE(request('/api/portfolios/1/holdings?symbol=bad%20symbol', 'DELETE'), context('1'))).status).toBe(400);
       const response = await holdingsRoute.DELETE(request('/api/portfolios/1/holdings?symbol=mqg.ax', 'DELETE'), context('1'));
       expect(response.status).toBe(200);
-      expect(removeHolding).toHaveBeenCalledWith(1, 'MQG.AX');
+      expect(removeHolding).toHaveBeenCalledWith(1, 'MQG.AX', 'admin');
     });
   });
 
@@ -192,7 +192,7 @@ describe('API route handlers', () => {
     const response = await alertsRoute.GET(request('/api/alerts?portfolioId=1'));
     expect(response.status).toBe(200);
     expect(await payload(response)).toEqual({ alerts: [] });
-    expect(listAlerts).toHaveBeenCalledWith(1);
+    expect(listAlerts).toHaveBeenCalledWith(1, 'admin');
   });
 
   describe('/api/portfolios/[id]/trades', () => {
@@ -223,7 +223,7 @@ describe('API route handlers', () => {
       expect((await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'MQG', side: 'BUY', quantity: 0, price: 100, brokerage: 5, timestamp: 1 }), context('1'))).status).toBe(400);
       const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'mqg', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }), context('1'));
       expect(response.status).toBe(201);
-      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'MQG.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 });
+      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'MQG.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }, 'admin');
     });
 
     it('returns an error when the ledger rejects a sell', async () => {
@@ -239,7 +239,7 @@ describe('API route handlers', () => {
     const response = await tradeItemRoute.DELETE(request('/api/portfolios/1/trades/7', 'DELETE'), { params: Promise.resolve({ id: '1', tradeId: '7' }) });
     expect(response.status).toBe(200);
     expect((await payload(response)).ok).toBe(true);
-    expect(deletePortfolioTrade).toHaveBeenCalledWith(1, 7);
+    expect(deletePortfolioTrade).toHaveBeenCalledWith(1, 7, 'admin');
     expect(capturePortfolioPerformance).toHaveBeenCalledWith(1);
     expect((await tradeItemRoute.DELETE(request('/api/portfolios/x/trades/7', 'DELETE'), { params: Promise.resolve({ id: 'x', tradeId: '7' }) })).status).toBe(400);
   });
@@ -258,7 +258,7 @@ describe('API route handlers', () => {
     expect((await cashRoute.POST(request('/api/portfolios/1/cash', 'POST', { type: 'DEPOSIT', amount: -5, timestamp: 2 }), context('1'))).status).toBe(400);
     const response = await cashRoute.POST(request('/api/portfolios/1/cash', 'POST', { type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' }), context('1'));
     expect(response.status).toBe(201);
-    expect(recordCashTransaction).toHaveBeenCalledWith({ portfolioId: 1, type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' });
+    expect(recordCashTransaction).toHaveBeenCalledWith({ portfolioId: 1, type: 'DEPOSIT', amount: 5_000, timestamp: 2, note: 'Funding' }, 'admin');
   });
 
   it('/api/portfolios/[id]/cash/[transactionId] deletes a cash movement and rebuilds performance', async () => {
@@ -266,7 +266,7 @@ describe('API route handlers', () => {
     const response = await cashItemRoute.DELETE(request('/api/portfolios/1/cash/8', 'DELETE'), { params: Promise.resolve({ id: '1', transactionId: '8' }) });
     expect(response.status).toBe(200);
     expect((await payload(response)).ok).toBe(true);
-    expect(deleteCashTransaction).toHaveBeenCalledWith(1, 8);
+    expect(deleteCashTransaction).toHaveBeenCalledWith(1, 8, 'admin');
     expect(capturePortfolioPerformance).toHaveBeenCalledWith(1);
   });
 

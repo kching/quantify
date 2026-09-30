@@ -45,7 +45,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
   try {
     const input = { portfolioId, symbol, side: side as TradeSide, quantity, price, brokerage: calculateBrokerage(quantity * price), timestamp };
-    const trade = user.id === 'admin' ? await recordTrade(input) : await recordTrade(input, user.id);
+    const trade = await recordTrade(input, user.id);
     try {
       const { refreshPortfolioSymbol } = await import('@/core/market');
       await refreshPortfolioSymbol(portfolioId, symbol);

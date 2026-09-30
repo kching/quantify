@@ -192,7 +192,7 @@ describe('Dashboard', () => {
   it('collapses the sidebar to an icon rail and expands it again', async () => {
     render(<Dashboard />);
 
-    const sidebar = screen.getByRole('complementary');
+    const sidebar = await screen.findByRole('complementary');
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     expect(sidebar.getAttribute('data-collapsed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Expand sidebar' }).getAttribute('aria-expanded')).toBe('false');

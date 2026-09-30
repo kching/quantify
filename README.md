@@ -66,4 +66,4 @@ docker build --build-arg APP_UID=1001 --build-arg APP_GID=1001 -t quantify:local
 
 Copy `.env.example` to `.env` and set `AUTH_SECRET`, `AUTH_GOOGLE_ID`, and `AUTH_GOOGLE_SECRET` before starting the compose service. The published image is built for `linux/amd64`.
 
-The Gitea workflow runs lint, tests, and a Next.js build on pushes to `main` and pull requests. It publishes `release-X.Y.Z` tags as both `X.Y.Z` and `latest` to `docker.local.curiouscoding.dev`. Configure the repository secrets `REGISTRY_USERNAME` and `REGISTRY_PASSWORD`, then push a tag such as `release-1.0.0`.
+The Gitea workflows run lint, tests, and a Next.js build on every push or manual dispatch. The Docker publish workflow runs manually or for `release-*` tags, increments the application version from Conventional Commits since the previous release, and publishes that version and `latest` to `docker.local.curiouscoding.dev`.

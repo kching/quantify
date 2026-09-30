@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Activity, BarChart3, CircleHelp, LayoutDashboard, Wallet, Microscope } from 'lucide-react';
+import { CircleHelp } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import type { UserProfile } from '@/core/types';
 import './AppSidebar.css';
@@ -15,17 +15,26 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import {DynamicIcon, IconName} from "lucide-react/dynamic";
 
 type AppPage = 'dashboard' | 'research';
+type NavItem = { id: string; label: string; icon: IconName; href: string };
+interface AppSidebarProps {
+  page: AppPage;
+  navItems: NavItem[];
+  hasPortfolio: boolean;
+  user?: Pick<UserProfile, 'name' | 'image'>;
+}
 
 const sections = new Set(['overview', 'portfolio', 'performance', 'ledger']);
+const portfolioNavItems = new Set(['portfolio', 'performance', 'ledger']);
 
 function getActiveSection(): string {
   const hash = window.location.hash.slice(1);
   return sections.has(hash) ? hash : 'overview';
 }
 
-export default function AppSidebar({ page, user }: { page: AppPage; user?: Pick<UserProfile, 'name' | 'image'> }): React.JSX.Element {
+export default function AppSidebar({ page, navItems = [], hasPortfolio, user }: AppSidebarProps): React.JSX.Element {
   const [section, setSection] = useState('overview');
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -33,6 +42,7 @@ export default function AppSidebar({ page, user }: { page: AppPage; user?: Pick<
   const displayName = user?.name ?? 'Admin';
   const firstName = displayName.trim().split(/\s+/)[0] || 'User';
   const avatarLabel = firstName.slice(0, 1).toUpperCase();
+  const visibleNavItems = hasPortfolio ? navItems : navItems.filter((navItem) => !portfolioNavItems.has(navItem.id));
 
   useEffect(() => {
     const updateSection = (): void => setSection(getActiveSection());
@@ -78,11 +88,14 @@ export default function AppSidebar({ page, user }: { page: AppPage; user?: Pick<
     <SidebarContent>
       <SidebarGroup>
         <SidebarMenu>
-          <SidebarMenuItem><SidebarMenuButton href="/dashboard#overview" title="Overview" ariaLabel="Overview" isActive={dashboardActive && section === 'overview'} onClick={() => setSection('overview')}><LayoutDashboard/><span className="sidebar-menu-label">Overview</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/dashboard#portfolio" title="Portfolio signals" ariaLabel="Portfolio signals" isActive={dashboardActive && section === 'portfolio'} onClick={() => setSection('portfolio')}><Activity/><span className="sidebar-menu-label">Portfolio signals</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/dashboard#performance" title="P&L performance" ariaLabel="P&L performance" isActive={dashboardActive && section === 'performance'} onClick={() => setSection('performance')}><BarChart3/><span className="sidebar-menu-label">P&amp;L performance</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/dashboard#ledger" title="Trade & cash ledger" ariaLabel="Trade & cash ledger" isActive={dashboardActive && section === 'ledger'} onClick={() => setSection('ledger')}><Wallet/><span className="sidebar-menu-label">Trade &amp; cash ledger</span></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton href="/research" title="Strategy research" ariaLabel="Strategy research" isActive={page === 'research'}><Microscope/><span className="sidebar-menu-label">Strategy research</span></SidebarMenuButton></SidebarMenuItem>
+          {visibleNavItems.map(navItem => (
+            <SidebarMenuItem key={navItem.id}>
+              <SidebarMenuButton href={navItem.href} title={navItem.label} ariaLabel={navItem.label} isActive={dashboardActive && section === navItem.id} onClick={() => setSection(navItem.id)}>
+                <DynamicIcon name={navItem.icon}/>
+                <span className="sidebar-menu-label">{navItem.label}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
         </SidebarMenu>
       </SidebarGroup>
     </SidebarContent>

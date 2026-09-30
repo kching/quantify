@@ -175,15 +175,17 @@ function holdingStrategyFromRow(row: { portfolioId: number; symbol: string; name
   return { portfolioId: row.portfolioId, symbol: row.symbol, name: row.name, params: parseStrategyParams(row.params) };
 }
 
-export async function getHoldingStrategy(portfolioId: number, symbol: string): Promise<HoldingStrategy | null> {
+export async function getHoldingStrategy(portfolioId: number, symbol: string, userId = 'admin'): Promise<HoldingStrategy | null> {
   await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) return null;
   const row = await db.select().from(holdingStrategies)
     .where(and(eq(holdingStrategies.portfolioId, portfolioId), eq(holdingStrategies.symbol, symbol))).get();
   return row ? holdingStrategyFromRow(row) : null;
 }
 
-export async function listHoldingStrategies(portfolioId: number): Promise<HoldingStrategy[]> {
+export async function listHoldingStrategies(portfolioId: number, userId = 'admin'): Promise<HoldingStrategy[]> {
   await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) return [];
   const rows = await db.select().from(holdingStrategies).where(eq(holdingStrategies.portfolioId, portfolioId)).orderBy(holdingStrategies.symbol).all();
   return rows.map(holdingStrategyFromRow);
 }

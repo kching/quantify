@@ -15,7 +15,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   }
   if (!(await listPortfolios(user.id)).some((portfolio) => portfolio.id === portfolioId)) return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
   try {
-    const trade = user.id === 'admin' ? await deletePortfolioTrade(portfolioId, tradeId) : await deletePortfolioTrade(portfolioId, tradeId, user.id);
+    const trade = await deletePortfolioTrade(portfolioId, tradeId, user.id);
     try {
       const { refreshPortfolioSymbol } = await import('@/core/market');
       await refreshPortfolioSymbol(portfolioId, trade.symbol);

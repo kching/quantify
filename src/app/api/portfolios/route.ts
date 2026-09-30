@@ -16,7 +16,7 @@ export async function POST(request: Request): Promise<Response> {
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name || name.length > 60) return Response.json({ error: 'Enter a portfolio name up to 60 characters.' }, { status: 400 });
   try {
-    const portfolio = user.id === 'admin' ? await createPortfolio(name) : await createPortfolio(name, user.id);
+    const portfolio = await createPortfolio(name, user.id);
     return Response.json({ portfolio: { ...portfolio, holdings: [] } }, { status: 201 });
   } catch {
     return Response.json({ error: 'A portfolio with that name already exists.' }, { status: 409 });

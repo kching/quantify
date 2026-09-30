@@ -89,7 +89,7 @@ export async function scanPortfolio(portfolioId: number, userId = 'admin'): Prom
   const portfolio = (await listPortfolios(userId)).find((item) => item.id === portfolioId);
   if (!portfolio) throw new Error('Portfolio not found.');
   const warnings: string[] = [];
-  const holdingStrategies = await listHoldingStrategies(portfolioId);
+  const holdingStrategies = await listHoldingStrategies(portfolioId, userId);
   const strategiesBySymbol = new Map(holdingStrategies.map((holdingStrategy) => [holdingStrategy.symbol, holdingStrategy]));
   const tradedSymbols = await listPortfolioTradeSymbols(portfolioId);
   const symbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);
@@ -107,7 +107,7 @@ export async function updateAllPortfolioMarkets(): Promise<{ portfolioCount: num
   const portfolios = await listPortfolios();
   const ownersBySymbol = new Map<string, Array<{ id: number; userId: string; holdingStrategy?: HoldingStrategy }>>();
   for (const portfolio of portfolios) {
-    const holdingStrategies = await listHoldingStrategies(portfolio.id);
+    const holdingStrategies = await listHoldingStrategies(portfolio.id, portfolio.userId);
     const strategiesBySymbol = new Map(holdingStrategies.map((holdingStrategy) => [holdingStrategy.symbol, holdingStrategy]));
     const tradedSymbols = await listPortfolioTradeSymbols(portfolio.id);
     const symbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);

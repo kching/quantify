@@ -7,7 +7,7 @@ const reactTestGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRON
 reactTestGlobal.IS_REACT_ACT_ENVIRONMENT = true;
 
 const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
-const { default: ResearchPage } = await import('./page');
+const { default: ResearchPage } = await import('./Research');
 
 const result = {
   symbol: 'MQG.AX', strategyId: 'rsi-14', initialBalance: 10_000, finalBalance: 11_250,
