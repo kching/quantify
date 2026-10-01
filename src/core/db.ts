@@ -213,11 +213,9 @@ export async function listHoldingStrategies(portfolioId: number, userId = 'admin
 export async function saveHoldingStrategy(input: HoldingStrategyInput, userId = 'admin'): Promise<HoldingStrategy> {
   await ensureDatabase();
   if (!(await ownsPortfolio(input.portfolioId, userId))) throw new Error('Portfolio not found.');
-  const holding = await db.select({ symbol: holdings.symbol }).from(holdings)
-    .where(and(eq(holdings.portfolioId, input.portfolioId), eq(holdings.symbol, input.symbol))).get();
-  if (!holding) throw new Error('Holding not found.');
   if (!input.name.trim()) throw new Error('Holding strategy name is required.');
   if (!input.label.trim()) throw new Error('Holding signal label is required.');
+  await db.insert(holdings).values({ portfolioId: input.portfolioId, symbol: input.symbol, addedAt: Date.now() }).onConflictDoNothing().run();
   const values = { portfolioId: input.portfolioId, symbol: input.symbol, label: input.label.trim(), name: input.name.trim(), params: JSON.stringify(input.params) };
   const row = input.id == null
     ? await db.insert(holdingStrategies).values(values).returning().get()

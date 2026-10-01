@@ -129,6 +129,8 @@ export interface BacktestResult {
   strategyId: string;
   initialBalance: number;
   finalBalance: number;
+  strategyReturnPct: number;
+  buyAndHoldReturnPct: number;
   totalReturnPct: number;
   winRatePct: number;
   maxDrawdownPct: number;

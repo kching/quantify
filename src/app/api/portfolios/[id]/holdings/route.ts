@@ -1,9 +1,6 @@
-import { addHolding, removeHolding } from '@/core/db';
+import { addHolding, ownsPortfolio, removeHolding } from '@/core/db';
+import { fetchYahooCandles } from '@/core/providers/yahoo.provider';
 import { getCurrentUser } from '@/lib/current-user';
-
-function normalizeAsxSymbol(value: string): string {
-  return value.endsWith('.AX') ? value : `${value}.AX`;
-}
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id: rawId } = await context.params;
@@ -12,13 +9,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const id = Number(rawId);
   const body = await request.json() as { symbol?: unknown };
   const symbolInput = typeof body.symbol === 'string' ? body.symbol.trim().toUpperCase() : '';
-  const symbol = symbolInput ? normalizeAsxSymbol(symbolInput) : '';
+  const symbol = symbolInput;
   if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)) return Response.json({ error: 'Enter a valid ticker, such as QQQ or MQG.AX.' }, { status: 400 });
+  if (!await ownsPortfolio(id, user.id)) return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
   try {
+    const candles = await fetchYahooCandles(symbol, '1d', 365);
+    if (!candles.length) return Response.json({ error: 'Ticker not found.' }, { status: 404 });
     await addHolding(id, symbol, user.id);
     return Response.json({ ok: true }, { status: 201 });
-  } catch {
-    return Response.json({ error: 'Portfolio not found.' }, { status: 404 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('No Yahoo Finance data') || message.includes('Yahoo Finance returned 404')) return Response.json({ error: 'Ticker not found.' }, { status: 404 });
+    return Response.json({ error: 'Unable to validate ticker.' }, { status: 502 });
   }
 }
 

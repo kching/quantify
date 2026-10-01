@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult, UserProfile } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import type { PortfolioSignalRow } from '@/components/PortfolioSignals';
 import RecentMovements from '@/components/RecentMovements';
 import PortfolioPerformance, { type PerformanceRange } from '@/components/PortfolioPerformance';
 import AppSidebar from '@/components/AppSidebar';
+import { ToastProvider, useToast } from '@/components/ui/toast';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 interface PortfolioWithHoldings extends Portfolio { holdings: PortfolioHolding[] }
@@ -27,7 +28,7 @@ const emptyPerformance: PerformanceSnapshots = { holdings: [], portfolio: [] };
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 const dateTime = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
 
-export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 'image'> }) {
+function DashboardContent({ user }: { user?: Pick<UserProfile, 'name' | 'image'> }): React.JSX.Element {
   const [portfolios, setPortfolios] = useState<PortfolioWithHoldings[]>([]);
   const [portfoliosLoaded, setPortfoliosLoaded] = useState(false);
   const [portfolioId, setPortfolioId] = useState<number | null>(null);
@@ -50,20 +51,12 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [signalError, setSignalError] = useState('');
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
-  useEffect(() => {
-    if (!error) return;
-    const timer = window.setTimeout(() => setError(''), 5_000);
-    return () => window.clearTimeout(timer);
-  }, [error]);
-  useEffect(() => {
-    if (!signalError) return;
-    const timer = window.setTimeout(() => setSignalError(''), 5_000);
-    return () => window.clearTimeout(timer);
-  }, [signalError]);
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  useEffect(() => { toastRef.current = toast; }, [toast]);
+  const reportError = useCallback((cause: unknown, fallback: string): void => { toastRef.current(cause instanceof Error ? cause.message : fallback, 'error'); }, []);
   const loadPortfolios = useCallback(async (selectFirst = false): Promise<void> => {
     const response = await fetch('/api/portfolios');
     const body = await response.json() as { portfolios: PortfolioWithHoldings[] };
@@ -121,7 +114,6 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   const refresh = useCallback(async (): Promise<ScanPayload | null> => {
     if (!portfolioId) return null;
     setLoading(true);
-    setError('');
     try {
       const [scanResponse, alertResponse] = await Promise.all([
         fetch(`/api/scan?portfolioId=${portfolioId}`), fetch(`/api/alerts?portfolioId=${portfolioId}`),
@@ -137,12 +129,12 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       setLastScannedAt(Date.now());
       return scanBody;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Market scan failed.');
+      reportError(cause, 'Market scan failed.');
       return null;
     } finally {
       setLoading(false);
     }
-  }, [portfolioId]);
+  }, [portfolioId, reportError]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadPortfolios(true), 0);
@@ -150,16 +142,16 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   }, [loadPortfolios]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadTradePage().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load trades.'));
+      void loadTradePage().catch((cause: unknown) => reportError(cause, 'Could not load trades.'));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadTradePage]);
+  }, [loadTradePage, reportError]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadCashPage(cashPage).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load cash entries.'));
+      void loadCashPage(cashPage).catch((cause: unknown) => reportError(cause, 'Could not load cash entries.'));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [cashPage, loadCashPage]);
+  }, [cashPage, loadCashPage, reportError]);
   useEffect(() => {
     if (!portfolioId) return;
     const initial = window.setTimeout(() => void refresh(), 0);
@@ -184,7 +176,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     try {
       const response = await fetch('/api/portfolios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: portfolioInput }) });
       const body = await response.json() as { portfolio?: PortfolioWithHoldings; error?: string };
-      if (!response.ok) throw new Error(body.error);
+      if (!response.ok) throw new Error(body.error ?? 'Could not create portfolio.');
       setPortfolioInput('');
       await loadPortfolios();
       if (body.portfolio) {
@@ -197,7 +189,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         setTradeFilter('');
       }
       setPortfolioDialogOpen(false);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not create portfolio.'); }
+    } catch (cause) { reportError(cause, 'Could not create portfolio.'); }
     finally { setBusy(false); }
   }
 
@@ -216,11 +208,13 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   async function addHolding(symbol: string): Promise<boolean> {
     if (!portfolioId) return false;
     setBusy(true);
-    setSignalError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/holdings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol }) });
       const body = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(body.error);
+      if (!response.ok) {
+        if (response.status === 404) { toast(body.error ?? 'Ticker not found.', 'error'); return false; }
+        throw new Error(body.error ?? 'Could not add ticker.');
+      }
       await loadPortfolios();
       const scanResult = await refresh();
       const normalizedSymbol = symbol.trim().toUpperCase();
@@ -230,18 +224,17 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         if (!removeResponse.ok) throw new Error('Yahoo Finance could not load this ticker, and it could not be removed automatically.');
         await loadPortfolios();
         setScan(null);
-        setSignalError(`${yahooWarning} The ticker was removed from this portfolio.`);
+        toast(`${yahooWarning} The ticker was removed from this portfolio.`, 'error');
         return false;
       }
       return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not add ticker.'); return false; }
+    } catch (cause) { reportError(cause, 'Could not add ticker.'); return false; }
     finally { setBusy(false); }
   }
 
   async function recordPortfolioTrade(trade: PositionLedgerInput): Promise<boolean> {
     if (!portfolioId) return false;
     setBusy(true);
-    setError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/trades`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -256,7 +249,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       await refresh();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not record this trade.');
+      reportError(cause, 'Could not record this trade.');
       return false;
     } finally {
       setBusy(false);
@@ -268,7 +261,6 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     const description = `${trade.side} ${trade.quantity} ${trade.symbol} @ ${money.format(trade.price)}`;
     if (!window.confirm(`Delete trade ${description}? Portfolio performance will be recalculated.`)) return;
     setBusy(true);
-    setError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/trades/${trade.id}`, { method: 'DELETE' });
       const body = await response.json() as { error?: string };
@@ -279,14 +271,13 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       if (!performanceResponse.ok) throw new Error('Trade was deleted, but performance could not be refreshed.');
       setPerformance(performanceBody);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not delete this trade.');
+      reportError(cause, 'Could not delete this trade.');
     } finally { setBusy(false); }
   }
 
   async function recordCashEntry(entry: CashLedgerInput): Promise<boolean> {
     if (!portfolioId) return false;
     setBusy(true);
-    setError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/cash`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -299,7 +290,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       await refresh();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not record this cash entry.');
+      reportError(cause, 'Could not record this cash entry.');
       return false;
     } finally { setBusy(false); }
   }
@@ -309,7 +300,6 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     const description = `${entry.type.toLowerCase()} of ${money.format(entry.amount)}`;
     if (!window.confirm(`Delete cash ${description}? Portfolio performance will be recalculated.`)) return;
     setBusy(true);
-    setError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/cash/${entry.id}`, { method: 'DELETE' });
       const body = await response.json() as { error?: string };
@@ -320,7 +310,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       if (!performanceResponse.ok) throw new Error('Cash entry was deleted, but performance could not be refreshed.');
       setPerformance(performanceBody);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not delete this cash entry.');
+      reportError(cause, 'Could not delete this cash entry.');
     } finally { setBusy(false); }
   }
 
@@ -334,7 +324,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
       if (!response.ok) throw new Error(body.error ?? `Could not remove ${symbol}.`);
       await loadPortfolios();
       await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : `Could not remove ${symbol}.`); }
+    } catch (cause) { reportError(cause, `Could not remove ${symbol}.`); }
     finally { setBusy(false); }
   }
 
@@ -342,14 +332,13 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     if (!portfolioId) return;
     if (!window.confirm(`Delete the signal from ${symbol}?`)) return;
     setBusy(true);
-    setSignalError('');
     try {
       const response = await fetch(`/api/portfolios/${portfolioId}/strategies/${encodeURIComponent(symbol)}?id=${signalId}`, { method: 'DELETE' });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Could not delete signal.');
       await refresh();
     } catch (cause) {
-      setSignalError(cause instanceof Error ? cause.message : 'Could not delete signal.');
+      reportError(cause, 'Could not delete signal.');
     } finally { setBusy(false); }
   }
 
@@ -386,8 +375,6 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
             {portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}<SelectOption value="new">＋ New portfolio…</SelectOption>
           </SelectControl><Button variant="ghost" size="icon" className="delete-portfolio" aria-label="Delete portfolio" title="Delete portfolio" disabled={!portfolioId || busy} onClick={() => void deletePortfolio()}><Trash2 className="size-4"/></Button></div>
         </section>
-        {error && <div className="notice notice-error" role="alert"><span>{error}</span><button className="notice-dismiss" type="button" aria-label="Dismiss error" onClick={() => setError('')}><X className="size-4"/></button></div>}
-
         <section className="metric-grid" aria-label="Portfolio summary">
           <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon blue"><Wallet/></div><div className="metric-label">TOTAL PORTFOLIO VALUE</div><strong>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.totalValue) : '—'}</strong><small>{latestPortfolioPerformance ? 'Cash + holdings at latest hourly close' : 'Record trades and cash entries to track'}</small></CardContent></Card>
           <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon" data-positive={latestPortfolioPerformance ? latestPortfolioPerformance.profitLoss >= 0 : undefined}>{latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? <ArrowUpRight/> : <ArrowDownRight/>}</div><div className="metric-label">PORTFOLIO PROFIT &amp; LOSS</div><strong className={latestPortfolioPerformance && latestPortfolioPerformance.profitLoss >= 0 ? 'positive' : 'negative'}>{latestPortfolioPerformance ? money.format(latestPortfolioPerformance.profitLoss) : '—'}</strong><small>Realized + unrealized, net brokerage</small></CardContent></Card>
@@ -396,7 +383,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         </section>
 
         <section className="overview-grid" id="watchlist">
-          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={visibleWatchlistHoldings} totalHoldings={watchlistTotal} page={activeWatchlistPage} pageCount={watchlistPageCount} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} error={signalError} onDismissError={() => setSignalError('')} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding} onRemoveSignal={removeSignal} onPageChange={setWatchlistPage}/>
+          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={visibleWatchlistHoldings} totalHoldings={watchlistTotal} page={activeWatchlistPage} pageCount={watchlistPageCount} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding} onRemoveSignal={removeSignal} onPageChange={setWatchlistPage}/>
           <RecentMovements tickers={visibleWatchlistHoldings.map(({ symbol }) => symbol)} signals={scan?.signals ?? []}/>
         </section>
 
@@ -420,4 +407,8 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
 
     <DialogRoot open={portfolioDialogOpen} onOpenChange={setPortfolioDialogOpen}><DialogContent aria-label="Create a portfolio" className="portfolio-dialog"><p className="section-kicker">PORTFOLIO SETUP</p><DialogTitle className="dialog-title">Create a portfolio</DialogTitle><DialogDescription className="panel-description">Give this portfolio a name. You can add assets after creating it.</DialogDescription><form className="portfolio-dialog-form" onSubmit={(event) => void createPortfolio(event)}><label htmlFor="new-portfolio-name">PORTFOLIO NAME</label><Input id="new-portfolio-name" aria-label="New portfolio name" autoFocus placeholder="e.g. Long-term investments" value={portfolioInput} onChange={(event) => setPortfolioInput(event.target.value)} maxLength={60} required/><div className="dialog-actions"><DialogClose render={<Button variant="outline" disabled={busy}/>}>Cancel</DialogClose><Button type="submit" disabled={busy || !portfolioInput.trim()}>{busy ? 'Creating…' : 'Create portfolio'}</Button></div></form></DialogContent></DialogRoot>
   </div>;
+}
+
+export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 'image'> }): React.JSX.Element {
+  return <ToastProvider><DashboardContent user={user}/></ToastProvider>;
 }

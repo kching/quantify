@@ -8,7 +8,7 @@ export type ToastVariant = 'success' | 'error';
 interface ToastData { variant: ToastVariant; }
 
 export function ToastProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  return <ToastPrimitive.Provider limit={1} timeout={3000}>
+  return <ToastPrimitive.Provider limit={1} timeout={5000}>
     {children}
     <ToastPrimitive.Portal>
       <ToastPrimitive.Viewport className="toast-viewport"><ToastList/></ToastPrimitive.Viewport>

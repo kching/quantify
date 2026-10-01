@@ -50,6 +50,15 @@ describe('trade and performance persistence', () => {
     expect(await database.getHoldingStrategy(secondPortfolio.id, 'TEST.AX')).not.toBeNull();
   });
 
+  it('adds a missing holding before saving its strategy', async () => {
+    const portfolio = await database.createPortfolio('Auto-add strategy holding');
+
+    const strategy = await database.saveHoldingStrategy({ portfolioId: portfolio.id, symbol: 'NEW.AX', label: 'New signal', name: 'rsi-14', params: { period: 14 } });
+
+    expect(strategy).toMatchObject({ portfolioId: portfolio.id, symbol: 'NEW.AX' });
+    expect((await database.listPortfolios()).find((item) => item.id === portfolio.id)?.holdings).toEqual([{ symbol: 'NEW.AX', addedAt: expect.any(Number) }]);
+  });
+
   it('records signal state timestamps only when the state changes', async () => {
     const portfolio = await database.createPortfolio('Signal state history');
     await database.addHolding(portfolio.id, 'STATE.AX');

@@ -17,7 +17,7 @@ function parseParameterTuple(raw: string | null): ParameterTuple | null {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length !== 3 || !parsed.every((value) => typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value))) return null;
     const [min, max, step] = parsed;
-    if (min < 1 || max < min || step < 1) return null;
+    if (min < 1 || max < min || step < 0) return null;
     return [min, max, step];
   } catch {
     return null;
@@ -25,6 +25,7 @@ function parseParameterTuple(raw: string | null): ParameterTuple | null {
 }
 
 function parameterValues([min, max, step]: ParameterTuple): number[] {
+  if (step === 0) return Array.from(new Set([min, max]));
   const values = Array.from({ length: Math.floor((max - min) / step) + 1 }, (_, index) => min + index * step);
   return Array.from(new Set([...values, max]));
 }

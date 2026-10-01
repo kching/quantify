@@ -11,7 +11,7 @@ const { default: ResearchPage } = await import('./research');
 
 const result = {
   symbol: 'MQG.AX', strategyId: 'rsi-14', initialBalance: 10_000, finalBalance: 11_250,
-  totalReturnPct: 12.5, winRatePct: 60, maxDrawdownPct: -8.2,
+  strategyReturnPct: 12.5, buyAndHoldReturnPct: 8, totalReturnPct: 4.5, winRatePct: 60, maxDrawdownPct: -8.2,
   trades: [{ entryDate: 1, exitDate: 2, entryPrice: 100, exitPrice: 110, pnlPct: 10 }],
 };
 
@@ -50,8 +50,10 @@ describe('ResearchPage', () => {
     await chooseOption('Backtest strategy', 'RSI (14)');
     fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
-    expect(await screen.findByText('Return vs drawdown')).toBeDefined();
-    expect(screen.getByText('Highest return')).toBeDefined();
+    expect(await screen.findByText('Strategy return vs drawdown')).toBeDefined();
+    expect(screen.getByText('Buy-and-hold return')).toBeDefined();
+    expect(screen.getByText('Maximum return')).toBeDefined();
+    expect(screen.getByRole('img', { name: 'Buy-and-hold return 8.0%' })).toBeDefined();
     expect(screen.getByText('Lowest drawdown')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('cadence=hourly');
@@ -73,8 +75,34 @@ describe('ResearchPage', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: 'RSI period step' }), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
-    expect(await screen.findByText('Return vs drawdown')).toBeDefined();
+    expect(await screen.findByText('Strategy return vs drawdown')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(encodeURIComponent('[5,30,5]'));
+  });
+
+  it('allows intermediate range values while typing and validates on blur', async () => {
+    render(<ResearchPage/>);
+    const minimum = screen.getByRole('spinbutton', { name: 'Fast period minimum' });
+    const maximum = screen.getByRole('spinbutton', { name: 'Fast period maximum' });
+    fireEvent.change(maximum, { target: { value: '5' } });
+    expect(maximum).toHaveProperty('value', '5');
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.blur(maximum);
+    expect(screen.getByRole('alert').textContent).toBe('Maximum must be at least the minimum.');
+    fireEvent.change(minimum, { target: { value: '4' } });
+    fireEvent.blur(minimum);
+    fireEvent.blur(maximum);
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('requires a non-negative step', () => {
+    render(<ResearchPage/>);
+    const step = screen.getByRole('spinbutton', { name: 'Fast period step' });
+    fireEvent.change(step, { target: { value: '-1' } });
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.blur(step);
+    expect(screen.getByText('Step must be 0 or greater.')).toBeDefined();
+    fireEvent.change(step, { target: { value: '0' } });
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

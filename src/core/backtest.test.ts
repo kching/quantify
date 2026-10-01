@@ -31,6 +31,7 @@ describe('runBacktest', () => {
     candles[59].close = 75;
     candles[60].open = 100;
     candles[62].open = 110;
+    candles[62].close = 130;
     const result = runBacktest('TEST.AX', candles, strategyForSignals({ 60: 'BUY', 62: 'SELL' }));
 
     expect(result.trades).toHaveLength(1);
@@ -39,7 +40,9 @@ describe('runBacktest', () => {
     });
     expect(result.trades[0].pnlPct).toBeCloseTo(0.1);
     expect(result.finalBalance).toBeCloseTo(11_000);
-    expect(result.totalReturnPct).toBeCloseTo(10);
+    expect(result.strategyReturnPct).toBeCloseTo(10);
+    expect(result.buyAndHoldReturnPct).toBeCloseTo(30);
+    expect(result.totalReturnPct).toBeCloseTo(-20);
   });
 
   it('compounds closed trades and calculates win rate and drawdown', () => {

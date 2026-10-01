@@ -17,6 +17,7 @@ let recordedTrades: Array<Record<string, unknown>> = [];
 let recordedCashTransactions: Array<Record<string, unknown>> = [];
 
 const listPortfolios = mock(async () => portfolios);
+const ownsPortfolio = mock(async (id: number) => id === 1);
 const createPortfolio = mock(async (name: string): Promise<Portfolio> => {
   if (portfolios.some((portfolio) => portfolio.name === name)) throw new Error('duplicate');
   const portfolio: Portfolio = { id: portfolios.length + 1, userId: 'admin', name, createdAt: 2 };
@@ -86,7 +87,7 @@ const fetchYahooCandles = mock(async () => [] as Candle[]);
 
 mock.module('@/core/db', () => ({
   DAILY_CANDLE_HISTORY_DAYS: 3650, DAILY_CANDLE_RETENTION_MS: 10 * 365 * 24 * 60 * 60 * 1000, TIME_SERIES_RETENTION_MS: 365 * 24 * 60 * 60 * 1000,
-  listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding,
+  listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, ownsPortfolio,
   getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, listPerformance,
   listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction,
 }));
@@ -132,7 +133,8 @@ describe('API route handlers', () => {
     candles = [];
     recordedTrades = [];
     recordedCashTransactions = [];
-    for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, capturePortfolioPerformance, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
+  fetchYahooCandles.mockResolvedValue([{ symbol: 'CSL', interval: '1d', timestamp: 1, open: 1, high: 1, low: 1, close: 1, volume: 1 }]);
+  for (const handler of [listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding, ownsPortfolio, getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, capturePortfolioPerformance, listPerformance, listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction, scanPortfolio, runBacktest, fetchYahooCandles]) handler.mockClear();
   });
 
   describe('/api/portfolios', () => {
@@ -167,17 +169,27 @@ describe('API route handlers', () => {
   });
 
   describe('/api/portfolios/[id]/holdings', () => {
-    it('normalizes symbols and rejects invalid symbols', async () => {
+    it('normalizes symbol case and preserves the entered market', async () => {
       const invalid = await holdingsRoute.POST(request('/api/portfolios/1/holdings', 'POST', { symbol: 'bad symbol' }), context('1'));
       expect(invalid.status).toBe(400);
       const response = await holdingsRoute.POST(request('/api/portfolios/1/holdings', 'POST', { symbol: ' csl ' }), context('1'));
       expect(response.status).toBe(201);
-      expect(addHolding).toHaveBeenCalledWith(1, 'CSL.AX', 'admin');
+      expect(addHolding).toHaveBeenCalledWith(1, 'CSL', 'admin');
+      await holdingsRoute.POST(request('/api/portfolios/1/holdings', 'POST', { symbol: 'qqq' }), context('1'));
+      expect(addHolding).toHaveBeenCalledWith(1, 'QQQ', 'admin');
     });
 
     it('returns not found when adding to an unknown portfolio', async () => {
       const response = await holdingsRoute.POST(request('/api/portfolios/99/holdings', 'POST', { symbol: 'CSL' }), context('99'));
       expect(response.status).toBe(404);
+    });
+
+    it('returns not found when Yahoo has no data for a ticker', async () => {
+      fetchYahooCandles.mockResolvedValueOnce([]);
+      const response = await holdingsRoute.POST(request('/api/portfolios/1/holdings', 'POST', { symbol: 'NOTREAL' }), context('1'));
+      expect(response.status).toBe(404);
+      expect(await payload(response)).toEqual({ error: 'Ticker not found.' });
+      expect(addHolding).not.toHaveBeenCalled();
     });
 
     it('validates and removes a holding', async () => {
@@ -206,7 +218,7 @@ describe('API route handlers', () => {
 
     it('filters and paginates trade requests at six entries per page', async () => {
       recordedTrades = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, portfolioId: 1, symbol: index < 3 ? 'MQG.AX' : 'XRO.AX', timestamp: index + 1 }));
-      const response = await tradesRoute.GET(request('/api/portfolios/1/trades?page=2&symbol=xro'), context('1'));
+      const response = await tradesRoute.GET(request('/api/portfolios/1/trades?page=2&symbol=xro.ax'), context('1'));
       expect(response.status).toBe(200);
       expect(await payload(response)).toEqual({ trades: [
         { id: 8, portfolioId: 1, symbol: 'XRO.AX', timestamp: 8 },
@@ -220,11 +232,11 @@ describe('API route handlers', () => {
       expect((await tradesRoute.GET(request('/api/portfolios/1/trades?symbol=invalid%20ticker'), context('1'))).status).toBe(400);
     });
 
-    it('validates a trade and normalizes ASX tickers', async () => {
+    it('validates a trade and preserves non-ASX tickers', async () => {
       expect((await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'MQG', side: 'BUY', quantity: 0, price: 100, brokerage: 5, timestamp: 1 }), context('1'))).status).toBe(400);
-      const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'mqg', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }), context('1'));
+      const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'qqq', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }), context('1'));
       expect(response.status).toBe(201);
-      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'MQG.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }, 'admin');
+      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'QQQ', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }, 'admin');
     });
 
     it('returns an error when the ledger rejects a sell', async () => {

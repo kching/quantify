@@ -14,4 +14,4 @@ services:
 
 volumes:
   quantify-data:
-    name: ${QUANTIFY_DATA_VOLUME:-quantify-data}
+    name: ${QUANTIFY_DATA_VOLUME:-data}

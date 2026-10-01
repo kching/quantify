@@ -83,8 +83,7 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
     return Response.json({ trades: matches.slice((page - 1) * pageSize, page * pageSize), ...(omitTradeTickers ? {} : { tickers: [...new Set(trades.map((trade) => trade.symbol))].sort() }), total: matches.length, page, pageSize, pageCount });
   }
   if (portfolioIdMatch?.[2] === 'trades' && method === 'POST') {
-    const symbolInput = body.symbol.toUpperCase();
-    const symbol = symbolInput.includes('.') ? symbolInput : `${symbolInput}.AX`;
+    const symbol = body.symbol.toUpperCase();
     const trade: PortfolioTrade = {
       id: trades.length + 1, portfolioId: Number(portfolioIdMatch[1]), symbol, side: body.side as PortfolioTrade['side'],
       quantity: Number(body.quantity), price: Number(body.price), brokerage: Number(body.brokerage), timestamp: Number(body.timestamp),
@@ -121,7 +120,8 @@ const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Pro
   if (holdingMatch && method === 'POST') {
     const portfolio = portfolios.find((item) => item.id === Number(holdingMatch[1]));
     const symbol = body.symbol.toUpperCase();
-    if (portfolio) portfolio.holdings.push({ symbol: symbol.endsWith('.AX') ? symbol : `${symbol}.AX`, addedAt: 3 });
+    if (symbol === 'NOTREAL') return Response.json({ error: 'Ticker not found.' }, { status: 404 });
+    if (portfolio) portfolio.holdings.push({ symbol, addedAt: 3 });
     return Response.json({ ok: true }, { status: 201 });
   }
   if (holdingMatch && method === 'DELETE') {
@@ -264,7 +264,7 @@ describe('Dashboard', () => {
     expect(screen.getByRole('textbox', { name: 'Portfolio name' })).toBeDefined();
     expect(screen.queryByText('Good trading starts with good signals.')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Record a trade' })).toBeNull();
-    expect(screen.queryByRole('textbox', { name: 'ASX ticker' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Ticker' })).toBeNull();
     fireEvent.change(screen.getByRole('textbox', { name: 'Portfolio name' }), { target: { value: 'First portfolio' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create portfolio' }));
     await waitForPortfolio('First portfolio');
@@ -305,15 +305,25 @@ describe('Dashboard', () => {
     expect(await screen.findByLabelText('Remove MQG.AX')).toBeDefined();
     await waitForScanCompletion();
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'ASX ticker' }), { target: { value: 'csl' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ticker' }), { target: { value: 'csl' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add asset' }));
-    expect(await screen.findByLabelText('Remove CSL.AX')).toBeDefined();
+    expect(await screen.findByLabelText('Remove CSL')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/holdings', expect.objectContaining({ method: 'POST' }));
 
-    fireEvent.click(screen.getByLabelText('Remove CSL.AX'));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/holdings?symbol=CSL.AX', { method: 'DELETE' }));
-    await waitFor(() => expect(screen.queryByLabelText('Remove CSL.AX')).toBeNull());
+    fireEvent.click(screen.getByLabelText('Remove CSL'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/holdings?symbol=CSL', { method: 'DELETE' }));
+    await waitFor(() => expect(screen.queryByLabelText('Remove CSL')).toBeNull());
     await waitForScanCompletion();
+  });
+
+  it('reports an invalid ticker in a toast', async () => {
+    render(<Dashboard />);
+    expect(await screen.findByLabelText('Remove MQG.AX')).toBeDefined();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ticker' }), { target: { value: 'notreal' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add asset' }));
+
+    await waitFor(() => expect(document.querySelector('.toast-root')?.textContent).toContain('Ticker not found.'));
+    expect(screen.queryByLabelText('Remove NOTREAL')).toBeNull();
   });
 
   it('records a completed trade with execution price, units and brokerage', async () => {
@@ -333,7 +343,7 @@ describe('Dashboard', () => {
     expect(await screen.findByText('5 @ $120.00')).toBeDefined();
     expect(screen.getByText(/Brokerage \$5\.00/)).toBeDefined();
     expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/trades', expect.objectContaining({ method: 'POST' }));
-    expect(await screen.findByLabelText('Remove CSL.AX')).toBeDefined();
+    expect(await screen.findByLabelText('Remove CSL')).toBeDefined();
     await waitForScanCompletion();
   });
 
@@ -468,7 +478,7 @@ describe('Dashboard', () => {
     render(<Dashboard />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/scan?portfolioId=1'));
-    expect(await screen.findByText('Market scan failed')).toBeDefined();
+    await waitFor(() => expect(document.querySelector('.toast-root')?.textContent).toContain('Market scan failed'));
     expect(screen.getByRole('button', { name: /Scanning…|Refresh data/ })).toBeDefined();
   });
 
