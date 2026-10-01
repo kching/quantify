@@ -90,8 +90,8 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
       const range = current[name];
       const nextValue = Math.max(1, Math.round(number));
       const nextRange: ParameterRange = edge === 'min'
-        ? { min: Math.min(nextValue, range.max), max: range.max }
-        : { min: range.min, max: Math.max(nextValue, range.min) };
+        ? { min: Math.min(nextValue, range.max), max: range.max, step: range.step }
+        : { min: range.min, max: Math.max(nextValue, range.min), step: range.step };
       return { ...current, [name]: nextRange };
     });
   }
