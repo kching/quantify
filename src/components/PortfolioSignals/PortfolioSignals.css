@@ -5,6 +5,9 @@
 .inline-form input { height: 32px; font-size: 12px; }
 .inline-form .add-asset-button { width: 32px; height: 32px; }
 .table-wrap { width: 100%; overflow-x: auto; }
+.watchlist-pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 9px; color: #818da0; font-size: 11px; }
+.watchlist-pagination > div { display: flex; align-items: center; gap: 8px; }
+.watchlist-pagination button { color: #52647f; }
 .signals-card table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
 .signals-card thead { background: #f8fafc; }
 .signals-card th { height: 33px; padding: 0 10px; color: #8995a6; font-size: 10px; font-weight: 750; letter-spacing: .65px; }
@@ -15,14 +18,16 @@
 .asset-symbol { color: #253246; font-size: 13px; font-weight: 700; letter-spacing: .1px; }
 .signal-expand-button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: #6d7a8d; cursor: pointer; }
 .signal-expand-button:hover { color: #253246; }
-.expanded-signals-row td { height: auto; padding: 0 10px 12px 30px; background: #fbfcfe; }
-.signal-list { display: grid; gap: 7px; white-space: normal; }
-.signal-list-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 9px 10px; border: 1px solid #e8edf3; border-radius: 6px; background: #fff; }
+.expanded-signals-row td { height: auto; padding: 0 10px 12px 62px; background: #fbfcfe; }
+.signal-list { white-space: normal; }
+.signal-list-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 10px 10px 20px; border-bottom: 1px solid #e8edf3; }
+.signal-list-item:last-child { border-bottom: 0; }
 .signal-list-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.signal-list-main div { display: grid; gap: 2px; min-width: 130px; }
+.signal-list-copy { display: grid; align-items: start; gap: 2px; min-width: 130px; text-align: left; }
 .signal-list-main strong { color: #253246; font-size: 12px; }
-.signal-list-main span, .signal-list-item p { color: #7c899b; font-size: 11px; }
-.signal-list-item p { grid-column: 1 / -1; margin: 0; }
+.signal-list-main span { color: #7c899b; font-size: 11px; }
+.signal-list-item > button { margin-left: auto; }
+.signal-list-item > .signal-delete-button { margin-right: 8px; }
 .signal-list-empty { padding: 10px 0; color: #8995a6; font-size: 12px; text-align: center; }
 .price-cell { color: #35445b; font-weight: 600; font-variant-numeric: tabular-nums; }
 .signal-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 47px; padding: 4px 7px; border: 1px solid #e8ebf0; border-radius: 5px; background: #f7f8fa; color: #737f91; font-size: 10px; font-weight: 750; letter-spacing: .35px; }

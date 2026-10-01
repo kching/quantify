@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleX, Plus, Trash2, X } from 'lucide-react';
 import type { Candle, PortfolioHolding, SignalResult } from '@/core/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,9 +25,13 @@ interface PortfolioSignalsProps {
   onDismissError: () => void;
   lastScannedAt: number | null;
   busy: boolean;
+  totalHoldings: number;
+  page: number;
+  pageCount: number;
   onAddHolding: (symbol: string) => Promise<boolean>;
   onRemoveHolding: (symbol: string) => Promise<void>;
   onRemoveSignal: (symbol: string, signalId: number) => Promise<void>;
+  onPageChange: (page: number) => void;
 }
 
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
@@ -39,7 +43,7 @@ interface SignalSummaryProps {
   signals: readonly SignalResult[];
 }
 
-export default function Index({ hasPortfolio, holdings, signals, warnings, error, onDismissError, lastScannedAt, busy, onAddHolding, onRemoveHolding, onRemoveSignal }: PortfolioSignalsProps): React.JSX.Element {
+export default function Index({ hasPortfolio, holdings, totalHoldings, page, pageCount, signals, warnings, error, onDismissError, lastScannedAt, busy, onAddHolding, onRemoveHolding, onRemoveSignal, onPageChange }: PortfolioSignalsProps): React.JSX.Element {
   const [symbolInput, setSymbolInput] = useState('');
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
   const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(() => new Set());
@@ -68,6 +72,7 @@ export default function Index({ hasPortfolio, holdings, signals, warnings, error
         const toggleExpanded = (): void => setExpandedSymbols((current) => { const next = new Set(current); if (next.has(holding.symbol)) next.delete(holding.symbol); else next.add(holding.symbol); return next; });
         return <Fragment key={holding.symbol}><tr><td><button type="button" className="signal-expand-button" aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${holding.symbol} signals`} onClick={toggleExpanded}>{expanded ? <ChevronUp className="size-4"/> : <ChevronDown className="size-4"/>}<span className="asset-symbol">{holding.symbol}</span></button></td><td className="price-cell">{latestPrice ? money.format(latestPrice) : '—'}</td><td><SignalSummary signals={row?.daily ?? []}/></td><td><DayPriceChange dailyCandles={row?.dailyCandles ?? []} hourlyCandles={row?.hourlyCandles ?? []}/></td><td><Button variant="ghost" size="icon" className="trade-delete-button" aria-label={`Remove ${holding.symbol}`} title={`Remove ${holding.symbol}`} disabled={busy} onClick={() => void onRemoveHolding(holding.symbol)}><Trash2 className="size-4"/></Button></td></tr>{expanded && <tr className="expanded-signals-row"><td colSpan={5}><SignalList symbol={holding.symbol} signals={row?.daily ?? []} busy={busy} onRemoveSignal={onRemoveSignal}/></td></tr>}</Fragment>;
       })}{holdings.length === 0 && <tr><td colSpan={5} className="empty-row">{hasPortfolio ? 'Add tickers above to start monitoring this portfolio.' : 'Create a portfolio to begin your market scan.'}</td></tr>}</tbody></table></div>
+      {totalHoldings > 0 && <div className="watchlist-pagination"><span>{(page - 1) * 6 + 1}–{Math.min(page * 6, totalHoldings)} of {totalHoldings}</span><div><Button variant="ghost" size="sm" aria-label="Previous watchlist page" disabled={busy || page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}><ChevronLeft className="size-4"/>Previous</Button><span>Page {page} of {pageCount}</span><Button variant="ghost" size="sm" aria-label="Next watchlist page" disabled={busy || page >= pageCount} onClick={() => onPageChange(page + 1)}>Next<ChevronRight className="size-4"/></Button></div></div>}
       {error && <div className="notice notice-error" role="alert"><span>{error}</span><button className="notice-dismiss" type="button" aria-label="Dismiss error" onClick={onDismissError}><X className="size-4"/></button></div>}{visibleWarnings.map((warning) => <div className="notice notice-warning" role="alert" key={warning}><span>{warning}</span><button className="notice-dismiss" type="button" aria-label="Dismiss warning" onClick={() => setDismissedWarnings((current) => new Set([...current, warning]))}><X className="size-4"/></button></div>)}<p className="panel-footnote">Signals are decision support, not trade instructions. Last checked: {lastScannedAt ? dateTime.format(lastScannedAt) : 'not yet scanned'}.</p>
     </CardContent>
   </Card>;
@@ -75,7 +80,7 @@ export default function Index({ hasPortfolio, holdings, signals, warnings, error
 
 function SignalList({ symbol, signals, busy, onRemoveSignal }: { symbol: string; signals: readonly SignalResult[]; busy: boolean; onRemoveSignal: (symbol: string, signalId: number) => Promise<void> }): React.JSX.Element {
   if (!signals.length) return <div className="signal-list-empty">No signals available for this holding.</div>;
-  return <div className="signal-list">{signals.map((signal) => <div className="signal-list-item" key={`${signal.signalId ?? signal.strategyId}-${signal.strategyId}`}><div className="signal-list-main"><div><strong>{signal.label ?? signal.strategyName}</strong><span>{signal.strategyName}</span></div><SignalPill signal={signal.signal} compact/></div><p>{signal.rationale}</p>{signal.signalId != null && <Button variant="ghost" size="icon" aria-label={`Delete ${signal.label ?? signal.strategyName} signal`} title={`Delete ${signal.label ?? signal.strategyName} signal`} disabled={busy} onClick={() => void onRemoveSignal(symbol, signal.signalId ?? 0)}><Trash2 className="size-4"/></Button>}</div>)}</div>;
+  return <div className="signal-list">{signals.map((signal) => <div className="signal-list-item" key={`${signal.signalId ?? signal.strategyId}-${signal.strategyId}`}><div className="signal-list-main"><div className="signal-list-copy"><strong>{signal.label ?? signal.strategyName}</strong><span>{signal.strategyName}</span></div><SignalPill signal={signal.signal} compact/></div>{signal.signalId != null && <Button variant="ghost" size="icon" className="signal-delete-button" aria-label={`Delete ${signal.label ?? signal.strategyName} signal`} title={`Delete ${signal.label ?? signal.strategyName} signal`} disabled={busy} onClick={() => void onRemoveSignal(symbol, signal.signalId ?? 0)}><CircleX className="size-4"/></Button>}</div>)}</div>;
 }
 
 function SignalSummary({ signals }: SignalSummaryProps): React.JSX.Element {
