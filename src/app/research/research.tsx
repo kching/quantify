@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { BacktestResult, HoldingStrategy, Portfolio, StrategyParams, UserProfile } from '@/core/types';
+import type { BacktestResult, HoldingStrategy, Portfolio, UserProfile } from '@/core/types';
 import StrategyResearch, { type StrategyResearchInput, type StrategySweepResult } from '@/components/StrategyResearch';
 import AppSidebar from '@/components/AppSidebar';
 import { ToastProvider } from '@/components/ui/toast';
@@ -16,24 +16,18 @@ export default function ResearchPage({ user, portfolios = [], initialStrategies 
     setBusy(true);
     setError('');
     try {
-      const values = (min: number, max: number): number[] => Array.from(new Set([min, Math.round((min + max) / 2), max]));
-      const parameterSets: StrategyParams[] = input.strategy === 'rsi-14'
-        ? values(input.ranges.period.min, input.ranges.period.max).map((period) => ({ period }))
-        : [
-            { fastPeriod: input.ranges.fastPeriod.min, slowPeriod: input.ranges.slowPeriod.min, signalPeriod: input.ranges.signalPeriod.min },
-            { fastPeriod: input.ranges.fastPeriod.max, slowPeriod: input.ranges.slowPeriod.max, signalPeriod: input.ranges.signalPeriod.max },
-            { fastPeriod: input.ranges.fastPeriod.min, slowPeriod: input.ranges.slowPeriod.max, signalPeriod: input.ranges.signalPeriod.min },
-            { fastPeriod: input.ranges.fastPeriod.max, slowPeriod: input.ranges.slowPeriod.min, signalPeriod: input.ranges.signalPeriod.max },
-            { fastPeriod: Math.round((input.ranges.fastPeriod.min + input.ranges.fastPeriod.max) / 2), slowPeriod: Math.round((input.ranges.slowPeriod.min + input.ranges.slowPeriod.max) / 2), signalPeriod: Math.round((input.ranges.signalPeriod.min + input.ranges.signalPeriod.max) / 2) },
-          ];
-      const runs = await Promise.all(parameterSets.map(async (params): Promise<BacktestResult> => {
-        const search = new URLSearchParams({ symbol: input.symbol, strategy: input.strategy, cadence: input.cadence, days: String(input.days), params: JSON.stringify(params) });
-        const response = await fetch(`/api/backtest?${search.toString()}`);
-        const body = await response.json() as { result?: BacktestResult; error?: string };
-        if (!response.ok || !body.result) throw new Error(body.error ?? 'Backtest failed.');
-        return body.result;
-      }));
-      setResult({ ...input, runs });
+      const parameterTuple = (range: { min: number; max: number; step: number }): string => JSON.stringify([range.min, range.max, range.step]);
+      const search = new URLSearchParams({ symbol: input.symbol, strategy: input.strategy, cadence: input.cadence, days: String(input.days) });
+      if (input.strategy === 'rsi-14') search.set('period', parameterTuple(input.ranges.period));
+      else {
+        search.set('fastPeriod', parameterTuple(input.ranges.fastPeriod));
+        search.set('slowPeriod', parameterTuple(input.ranges.slowPeriod));
+        search.set('signalPeriod', parameterTuple(input.ranges.signalPeriod));
+      }
+      const response = await fetch(`/api/backtest?${search.toString()}`);
+      const body = await response.json() as { results?: BacktestResult[]; error?: string };
+      if (!response.ok || !body.results) throw new Error(body.error ?? 'Backtest failed.');
+      setResult({ ...input, runs: body.results });
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Backtest failed.');

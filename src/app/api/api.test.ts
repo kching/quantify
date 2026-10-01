@@ -305,6 +305,20 @@ describe('API route handlers', () => {
       expect(runBacktest).toHaveBeenCalledTimes(1);
     });
 
+    it('runs a parameter tuple sweep in one request', async () => {
+      const now = Date.now();
+      candles = Array.from({ length: 80 }, (_, index) => ({
+        symbol: 'MQG.AX', interval: '1d', timestamp: now - (79 - index) * 86_400_000,
+        open: 100, high: 102, low: 99, close: 101, volume: 1_000,
+      }));
+      runBacktest.mockClear();
+      const tuple = (min: number, max: number, step: number): string => encodeURIComponent(JSON.stringify([min, max, step]));
+      const response = await backtestRoute.GET(request(`/api/backtest?symbol=MQG.AX&fastPeriod=${tuple(10, 20, 10)}&slowPeriod=${tuple(30, 40, 10)}&signalPeriod=${tuple(5, 15, 10)}`));
+      expect(response.status).toBe(200);
+      expect((await payload(response)).results).toHaveLength(8);
+      expect(runBacktest).toHaveBeenCalledTimes(8);
+    });
+
     it('returns 502 when history cannot be fetched', async () => {
       fetchYahooCandles.mockRejectedValueOnce(new Error('Yahoo unavailable'));
       const response = await backtestRoute.GET(request('/api/backtest?symbol=MQG.AX'));

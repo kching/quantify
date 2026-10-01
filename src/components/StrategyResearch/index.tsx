@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ArrowLeft, LoaderCircle, Save, Trash2 } from 'lucide-react';
 import type { BacktestResult, HoldingStrategy, Portfolio, StrategyParams } from '@/core/types';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { SelectControl, SelectOption } from '@/components/ui/select';
@@ -11,7 +12,7 @@ import { useToast } from '@/components/ui/toast';
 import './StrategyResearch.css';
 
 type Cadence = 'hourly' | 'daily';
-interface ParameterRange { min: number; max: number; }
+interface ParameterRange { min: number; max: number; step: number; }
 interface StrategyRanges { period: ParameterRange; fastPeriod: ParameterRange; slowPeriod: ParameterRange; signalPeriod: ParameterRange; }
 export interface StrategyResearchInput { symbol: string; strategy: string; cadence: Cadence; days: number; ranges: StrategyRanges; }
 export interface StrategySweepResult extends StrategyResearchInput { runs: BacktestResult[]; }
@@ -27,23 +28,20 @@ interface StrategyResearchProps {
 }
 
 const strategyLabels: Record<string, string> = { 'klinger-oscillator': 'Klinger Volume Oscillator', 'rsi-14': 'RSI (14)' };
-const rangeOptions: Record<Cadence, Array<{ label: string; days: number }>> = {
-  hourly: [{ label: 'Last month', days: 30 }, { label: 'Last 3 months', days: 90 }, { label: 'Last 6 months', days: 182 }, { label: 'Last 1 year', days: 365 }],
-  daily: [{ label: 'Last year', days: 365 }, { label: 'Last 3 years', days: 1095 }, { label: 'Last 5 years', days: 1825 }, { label: 'Last 10 years', days: 3650 }],
+const rangeOptions: Record<Cadence, Array<{ label: string; shortLabel: string; days: number }>> = {
+  hourly: [{ label: 'Last month', shortLabel: '1M', days: 30 }, { label: 'Last 3 months', shortLabel: '3M', days: 90 }, { label: 'Last 6 months', shortLabel: '6M', days: 182 }, { label: 'Last 1 year', shortLabel: '12M', days: 365 }],
+  daily: [{ label: 'Last year', shortLabel: '1Y', days: 365 }, { label: 'Last 3 years', shortLabel: '3Y', days: 1095 }, { label: 'Last 5 years', shortLabel: '5Y', days: 1825 }, { label: 'Last 10 years', shortLabel: '10Y', days: 3650 }],
 };
-const initialRanges: StrategyRanges = { period: { min: 5, max: 30 }, fastPeriod: { min: 10, max: 60 }, slowPeriod: { min: 30, max: 100 }, signalPeriod: { min: 5, max: 30 } };
+const initialRanges: StrategyRanges = { period: { min: 5, max: 30, step: 1 }, fastPeriod: { min: 10, max: 60, step: 1 }, slowPeriod: { min: 30, max: 100, step: 1 }, signalPeriod: { min: 5, max: 30, step: 1 } };
 
 function parameterSets(sweep: StrategySweepResult): StrategyParams[] {
-  const values = (min: number, max: number): number[] => Array.from(new Set([min, Math.round((min + max) / 2), max]));
+  const values = (min: number, max: number, step: number): number[] => {
+    const stepped = Array.from({ length: Math.floor((max - min) / step) + 1 }, (_, index) => min + index * step);
+    return Array.from(new Set([...stepped, max]));
+  };
   return sweep.strategy === 'rsi-14'
-    ? values(sweep.ranges.period.min, sweep.ranges.period.max).map((period) => ({ period }))
-    : [
-        { fastPeriod: sweep.ranges.fastPeriod.min, slowPeriod: sweep.ranges.slowPeriod.min, signalPeriod: sweep.ranges.signalPeriod.min },
-        { fastPeriod: sweep.ranges.fastPeriod.max, slowPeriod: sweep.ranges.slowPeriod.max, signalPeriod: sweep.ranges.signalPeriod.max },
-        { fastPeriod: sweep.ranges.fastPeriod.min, slowPeriod: sweep.ranges.slowPeriod.max, signalPeriod: sweep.ranges.signalPeriod.min },
-        { fastPeriod: sweep.ranges.fastPeriod.max, slowPeriod: sweep.ranges.slowPeriod.min, signalPeriod: sweep.ranges.signalPeriod.max },
-        { fastPeriod: Math.round((sweep.ranges.fastPeriod.min + sweep.ranges.fastPeriod.max) / 2), slowPeriod: Math.round((sweep.ranges.slowPeriod.min + sweep.ranges.slowPeriod.max) / 2), signalPeriod: Math.round((sweep.ranges.signalPeriod.min + sweep.ranges.signalPeriod.max) / 2) },
-      ];
+    ? values(sweep.ranges.period.min, sweep.ranges.period.max, sweep.ranges.period.step).map((period) => ({ period }))
+    : values(sweep.ranges.fastPeriod.min, sweep.ranges.fastPeriod.max, sweep.ranges.fastPeriod.step).flatMap((fastPeriod) => values(sweep.ranges.slowPeriod.min, sweep.ranges.slowPeriod.max, sweep.ranges.slowPeriod.step).flatMap((slowPeriod) => values(sweep.ranges.signalPeriod.min, sweep.ranges.signalPeriod.max, sweep.ranges.signalPeriod.step).map((signalPeriod) => ({ fastPeriod, slowPeriod, signalPeriod }))));
 }
 function paramsLabel(params: StrategyParams): string { return Object.entries(params).map(([key, value]) => `${key.replace('Period', '')} ${String(value)}`).join(' · '); }
 interface ChartScale { min: number; max: number; ticks: number[]; }
@@ -83,9 +81,21 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
 
   function showToast(message: string, kind: 'success' | 'error'): void { toast(message, kind); }
 
-  function changeStrategy(next: string): void { setStrategy(next); setRanges(next === 'rsi-14' ? { ...initialRanges, period: { min: 5, max: 30 } } : initialRanges); }
+  function changeStrategy(next: string): void { setStrategy(next); setRanges(next === 'rsi-14' ? { ...initialRanges, period: { min: 5, max: 30, step: 1 } } : initialRanges); }
   function changeCadence(next: Cadence): void { setCadence(next); setDays(rangeOptions[next][next === 'hourly' ? 1 : 2].days); }
-  function updateRange(name: keyof StrategyRanges, edge: keyof ParameterRange, value: string): void { const number = Number(value); if (Number.isFinite(number)) setRanges((current) => ({ ...current, [name]: { ...current[name], [edge]: Math.max(1, Math.round(number)) } })); }
+  function updateRange(name: keyof StrategyRanges, edge: keyof ParameterRange, value: string): void {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return;
+    setRanges((current) => {
+      const range = current[name];
+      const nextValue = Math.max(1, Math.round(number));
+      const nextRange: ParameterRange = edge === 'min'
+        ? { min: Math.min(nextValue, range.max), max: range.max }
+        : { min: range.min, max: Math.max(nextValue, range.min) };
+      return { ...current, [name]: nextRange };
+    });
+  }
+  function updateStep(name: keyof StrategyRanges, value: string): void { const number = Number(value); if (Number.isFinite(number)) setRanges((current) => ({ ...current, [name]: { ...current[name], step: Math.max(1, Math.round(number)) } })); }
   async function submitBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> { event.preventDefault(); setSelectedIndex(0); setSignalLabel(null); await onRun({ symbol, strategy, cadence, days, ranges }); }
   function selectRun(index: number): void { setSelectedIndex(index); setSignalLabel(null); }
   async function saveSignal(): Promise<void> {
@@ -105,11 +115,12 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
 
   if (!result) return <Card className="backtest-panel research-setup-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL BUILDER</p><CardTitle>Configure your backtest</CardTitle><CardDescription>Choose a strategy, cadence, time window, and parameter ranges to sweep.</CardDescription></div></CardHeader><CardContent>
     <form className="research-setup-form" onSubmit={(event) => void submitBacktest(event)}>
-      <div className="setup-grid"><label>Symbol<Input aria-label="Ticker for backtest" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())}/></label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label></div>
-      <div className="field-block"><span className="field-label">Candle cadence</span><div className="choice-row">{(['hourly', 'daily'] as const).map((option) => <button className={cadence === option ? 'choice-button selected' : 'choice-button'} type="button" key={option} onClick={() => changeCadence(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}</div></div>
-      <div className="field-block"><span className="field-label">Backtest window</span><div className="choice-row range-choice-row">{rangeOptions[cadence].map((option) => <button className={days === option.days ? 'choice-button selected' : 'choice-button'} type="button" key={option.days} onClick={() => setDays(option.days)}>{option.label}</button>)}</div></div>
-      <div className="parameter-range-grid">{(strategy === 'rsi-14' ? [['period', 'RSI period']] : [['fastPeriod', 'Fast period'], ['slowPeriod', 'Slow period'], ['signalPeriod', 'Signal period']]).map(([name, label]) => <div className="parameter-range" key={name}><span className="field-label">{label}</span><label>Min<Input aria-label={`${label} minimum`} type="number" min="1" value={ranges[name as keyof StrategyRanges].min} onChange={(event) => updateRange(name as keyof StrategyRanges, 'min', event.target.value)}/></label><label>Max<Input aria-label={`${label} maximum`} type="number" min="1" value={ranges[name as keyof StrategyRanges].max} onChange={(event) => updateRange(name as keyof StrategyRanges, 'max', event.target.value)}/></label></div>)}</div>
-      <div className="setup-actions"><p className="method-note">{cadence === 'hourly' ? 'Hourly cadence uses hourly candles.' : 'Daily cadence uses daily candles.'} The sweep tests the minimum, midpoint, and maximum values in each range.</p><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : null}{busy ? 'Running sweep…' : 'Run parameter sweep'}</Button></div>
+      <div className="setup-columns"><div className="setup-controls"><div className="setup-grid"><label>Symbol<Input aria-label="Ticker for backtest" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())}/></label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label></div>
+        <div className="field-block"><span className="field-label">Candle cadence</span><ButtonGroup className="cadence-button-group">{(['hourly', 'daily'] as const).map((option) => <button className={cadence === option ? 'choice-button selected' : 'choice-button'} type="button" aria-pressed={cadence === option} key={option} onClick={() => changeCadence(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}</ButtonGroup></div>
+        <div className="field-block"><div className="slider-heading"><span className="field-label">Backtest window</span><strong>{rangeOptions[cadence].find((option) => option.days === days)?.label}</strong></div><input className="range-slider" aria-label="Backtest window" type="range" min="0" max={rangeOptions[cadence].length - 1} step="1" value={Math.max(0, rangeOptions[cadence].findIndex((option) => option.days === days))} onChange={(event) => setDays(rangeOptions[cadence][Number(event.target.value)]?.days ?? days)}/><div className="slider-labels">{rangeOptions[cadence].map((option) => <span key={option.days}>{option.shortLabel}</span>)}</div></div>
+      </div><div className="parameter-panel"><div><span className="field-label">Parameter ranges</span><p>Set the minimum and maximum values to test.</p></div><div className="parameter-range-grid">{(strategy === 'rsi-14' ? [['period', 'RSI period']] : [['fastPeriod', 'Fast period'], ['slowPeriod', 'Slow period'], ['signalPeriod', 'Signal period']]).map(([name, label]) => { const range = ranges[name as keyof StrategyRanges]; return <div className="parameter-range" key={name}><span className="field-label">{label}</span><label>Min<Input aria-label={`${label} minimum`} type="number" min="1" max={range.max} value={range.min} onChange={(event) => updateRange(name as keyof StrategyRanges, 'min', event.target.value)}/></label><label>Max<Input aria-label={`${label} maximum`} type="number" min={range.min} value={range.max} onChange={(event) => updateRange(name as keyof StrategyRanges, 'max', event.target.value)}/></label><label>Step<Input aria-label={`${label} step`} type="number" min="1" step="1" value={range.step} disabled={range.min === range.max} onChange={(event) => updateStep(name as keyof StrategyRanges, event.target.value)}/></label></div>; })}</div></div>
+      </div>
+      <div className="setup-actions"><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : null}{busy ? 'Running sweep…' : 'Run parameter sweep'}</Button></div>
     </form>
   </CardContent></Card>;
 

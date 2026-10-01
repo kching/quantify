@@ -17,7 +17,7 @@ const result = {
 
 let status = 200;
 const fetchMock = mock(async (url: string): Promise<Response> => { void url; return status === 200
-  ? Response.json({ result })
+  ? Response.json({ results: [result] })
   : Response.json({ error: 'Not enough hourly candles.' }, { status }); });
 
 async function chooseOption(label: string, optionName: string): Promise<void> {
@@ -53,7 +53,7 @@ describe('ResearchPage', () => {
     expect(await screen.findByText('Return vs drawdown')).toBeDefined();
     expect(screen.getByText('Highest return')).toBeDefined();
     expect(screen.getByText('Lowest drawdown')).toBeDefined();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('cadence=hourly');
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('days=90');
   });
@@ -64,5 +64,17 @@ describe('ResearchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
     expect((await screen.findByRole('alert')).textContent).toBe('Not enough hourly candles.');
+  });
+
+  it('uses each parameter step when generating the sweep', async () => {
+    render(<ResearchPage/>);
+
+    await chooseOption('Backtest strategy', 'RSI (14)');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'RSI period step' }), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
+
+    expect(await screen.findByText('Return vs drawdown')).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(encodeURIComponent('[5,30,5]'));
   });
 });

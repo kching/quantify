@@ -3,10 +3,48 @@ import { runBacktest } from '@/core/backtest';
 import { strategies } from '@/core/engine';
 import { fetchYahooCandles } from '@/core/providers/yahoo.provider';
 import type { CandleInterval } from '@/core/types';
-import type { StrategyParams } from '@/core/types';
+import type { BacktestResult, StrategyParams } from '@/core/types';
 import { getCurrentUser } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
+
+type ParameterTuple = [number, number, number];
+const MAX_SWEEP_RUNS = 10_000;
+
+function parseParameterTuple(raw: string | null): ParameterTuple | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length !== 3 || !parsed.every((value) => typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value))) return null;
+    const [min, max, step] = parsed;
+    if (min < 1 || max < min || step < 1) return null;
+    return [min, max, step];
+  } catch {
+    return null;
+  }
+}
+
+function parameterValues([min, max, step]: ParameterTuple): number[] {
+  const values = Array.from({ length: Math.floor((max - min) / step) + 1 }, (_, index) => min + index * step);
+  return Array.from(new Set([...values, max]));
+}
+
+function sweepParameterSets(strategyId: string, query: URLSearchParams): StrategyParams[] | null {
+  if (strategyId === 'rsi-14') {
+    const period = parseParameterTuple(query.get('period'));
+    return period ? parameterValues(period).map((value) => ({ period: value })) : null;
+  }
+  const fastPeriod = parseParameterTuple(query.get('fastPeriod'));
+  const slowPeriod = parseParameterTuple(query.get('slowPeriod'));
+  const signalPeriod = parseParameterTuple(query.get('signalPeriod'));
+  if (!fastPeriod || !slowPeriod || !signalPeriod) return null;
+  const fastValues = parameterValues(fastPeriod);
+  const slowValues = parameterValues(slowPeriod);
+  const signalValues = parameterValues(signalPeriod);
+  const runCount = fastValues.length * slowValues.length * signalValues.length;
+  if (runCount > MAX_SWEEP_RUNS) throw new Error(`Sweep is limited to ${MAX_SWEEP_RUNS.toLocaleString()} runs.`);
+  return fastValues.flatMap((fastPeriodValue) => slowValues.flatMap((slowPeriodValue) => signalValues.map((signalPeriodValue) => ({ fastPeriod: fastPeriodValue, slowPeriod: slowPeriodValue, signalPeriod: signalPeriodValue }))));
+}
 
 export async function GET(request: Request): Promise<Response> {
   if (!(await getCurrentUser())) return Response.json({ error: 'Sign in required.' }, { status: 401 });
@@ -18,8 +56,18 @@ export async function GET(request: Request): Promise<Response> {
   const cadence = query.get('cadence') === 'hourly' ? 'hourly' : 'daily';
   const interval: CandleInterval = cadence === 'hourly' ? '1h' : '1d';
   let params: StrategyParams = {};
+  let parameterSets: StrategyParams[] | null = null;
+  const hasSweep = strategyId === 'rsi-14' ? query.has('period') : query.has('fastPeriod') || query.has('slowPeriod') || query.has('signalPeriod');
+  if (hasSweep) {
+    try {
+      parameterSets = sweepParameterSets(strategyId, query);
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : 'Sweep parameters are invalid.' }, { status: 422 });
+    }
+    if (!parameterSets) return Response.json({ error: 'Sweep parameters must be [min, max, step] tuples.' }, { status: 400 });
+  }
   const rawParams = query.get('params');
-  if (rawParams) {
+  if (rawParams && !parameterSets) {
     try {
       const parsed: unknown = JSON.parse(rawParams);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Parameters must be an object.');
@@ -46,5 +94,8 @@ export async function GET(request: Request): Promise<Response> {
   const days = Math.min(Math.max(Number.isFinite(requestedDays) ? requestedDays : 365, 30), historyDays);
   const windowCutoff = Date.now() - days * 86_400_000;
   const window = candles.filter((candle) => candle.timestamp >= windowCutoff);
-  return Response.json({ result: runBacktest(symbol, window, strategy, 10_000, params) });
+  const results: BacktestResult[] = parameterSets
+    ? parameterSets.map((sweepParams) => runBacktest(symbol, window, strategy, 10_000, sweepParams))
+    : [runBacktest(symbol, window, strategy, 10_000, params)];
+  return parameterSets ? Response.json({ results }) : Response.json({ result: results[0] });
 }
