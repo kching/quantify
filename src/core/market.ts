@@ -1,5 +1,5 @@
 import { analyzeSymbol, loadStrategy } from './engine';
-import { getCandles, listHoldingStrategies, listPortfolioTradeSymbols, listPortfolios, recordAlert, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
+import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, listHoldingStrategies, listPortfolioTradeSymbols, listPortfolios, recordAlert, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
 import { capturePortfolioPerformance } from './performance.service';
 import { fetchYahooCandles } from './providers/yahoo.provider';
 import type { Candle, CandleInterval, HoldingStrategy, SignalResult, SignalStrategy, StrategyParams } from './types';
@@ -26,10 +26,10 @@ async function refreshSymbolIfStale(symbol: string, interval: CandleInterval, ke
   const freshness = interval === '1h' ? 60 * 60_000 : 24 * 60 * 60_000;
   const cooldown = interval === '1h' ? 30 * 60_000 : 8 * 60 * 60_000;
   if (cached.length && (now - cached[cached.length - 1].timestamp < freshness || now - (lastChecked.get(key) ?? 0) < cooldown)) return cached;
-  const days = cached.length ? 10 : Math.floor(TIME_SERIES_RETENTION_MS / (24 * 60 * 60 * 1000));
+  const days = interval === '1d' ? cached.length ? 10 : DAILY_CANDLE_HISTORY_DAYS : cached.length ? 10 : Math.floor(TIME_SERIES_RETENTION_MS / (24 * 60 * 60 * 1000));
   try {
     const fresh = await fetchYahooCandles(symbol, interval, days);
-    const cutoff = now - TIME_SERIES_RETENTION_MS;
+    const cutoff = now - (interval === '1d' ? DAILY_CANDLE_RETENTION_MS : TIME_SERIES_RETENTION_MS);
     await saveCandles(interval, fresh.filter((candle) => candle.timestamp >= cutoff));
   } finally {
     lastChecked.set(key, now);
@@ -43,6 +43,26 @@ export async function refreshPortfolioSymbol(portfolioId: number, symbol: string
   const cutoff = now - TIME_SERIES_RETENTION_MS;
   await saveCandles('1h', fresh.filter((candle) => candle.timestamp >= cutoff));
   await capturePortfolioPerformance(portfolioId);
+}
+
+export async function updateAllPortfolioDailyCandles(): Promise<{ symbolCount: number; warnings: string[] }> {
+  const portfolios = await listPortfolios();
+  const symbols = new Set<string>();
+  for (const portfolio of portfolios) {
+    portfolio.holdings.forEach(({ symbol }) => symbols.add(symbol));
+    (await listPortfolioTradeSymbols(portfolio.id)).forEach((symbol) => symbols.add(symbol));
+  }
+  const warnings: string[] = [];
+  const cutoff = Date.now() - DAILY_CANDLE_RETENTION_MS;
+  await Promise.all([...symbols].map(async (symbol) => {
+    try {
+      const fresh = await fetchYahooCandles(symbol, '1d', DAILY_CANDLE_HISTORY_DAYS);
+      await saveCandles('1d', fresh.filter((candle) => candle.timestamp >= cutoff));
+    } catch (error: unknown) {
+      warnings.push(`${symbol} daily data: ${error instanceof Error ? error.message : 'refresh failed'}`);
+    }
+  }));
+  return { symbolCount: symbols.size, warnings };
 }
 
 interface SymbolScan {

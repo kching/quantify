@@ -33,6 +33,6 @@ export async function fetchYahooCandles(symbol: string, interval: CandleInterval
     const close = quote.close?.[index];
     const volume = quote.volume?.[index];
     if (open == null || high == null || low == null || close == null || volume == null) return [];
-    return [{ symbol, timestamp: timestamp * 1000, open, high, low, close, volume }];
+    return [{ symbol, interval, timestamp: timestamp * 1000, open, high, low, close, volume }];
   });
 }

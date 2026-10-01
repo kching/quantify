@@ -85,6 +85,7 @@ const runBacktest = mock(() => ({ symbol: 'TEST.AX', strategyId: 'klinger-oscill
 const fetchYahooCandles = mock(async () => [] as Candle[]);
 
 mock.module('@/core/db', () => ({
+  DAILY_CANDLE_HISTORY_DAYS: 3650, DAILY_CANDLE_RETENTION_MS: 10 * 365 * 24 * 60 * 60 * 1000,
   listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding,
   getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, listPerformance,
   listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction,
@@ -288,19 +289,19 @@ describe('API route handlers', () => {
     it('returns 422 when there are too few cached candles', async () => {
       const response = await backtestRoute.GET(request('/api/backtest?symbol=MQG.AX'));
       expect(response.status).toBe(422);
-      expect(fetchYahooCandles).toHaveBeenCalledWith('MQG.AX', '1d', 1825);
+      expect(fetchYahooCandles).toHaveBeenCalledWith('MQG.AX', '1d', 3650);
     });
 
     it('uses cached candles for a valid backtest', async () => {
       const now = Date.now();
       candles = Array.from({ length: 80 }, (_, index) => ({
-        symbol: 'MQG.AX', timestamp: now - (79 - index) * 86_400_000,
+        symbol: 'MQG.AX', interval: '1d', timestamp: now - (79 - index) * 86_400_000,
         open: 100, high: 102, low: 99, close: 101, volume: 1_000,
       }));
       const response = await backtestRoute.GET(request('/api/backtest?symbol=MQG.AX&days=365'));
       expect(response.status).toBe(200);
       expect((await payload(response)).result).toEqual({ symbol: 'TEST.AX', strategyId: 'klinger-oscillator', trades: [] });
-      expect(fetchYahooCandles).not.toHaveBeenCalled();
+      expect(fetchYahooCandles).toHaveBeenCalledWith('MQG.AX', '1d', 3650);
       expect(runBacktest).toHaveBeenCalledTimes(1);
     });
 

@@ -11,7 +11,7 @@ const trades: PortfolioTrade[] = [
 ];
 
 function candles(symbol: string, values: Array<[number, number]>): Candle[] {
-  return values.map(([timestamp, close]) => ({ symbol, timestamp, open: close, high: close, low: close, close, volume: 1_000 }));
+  return values.map(([timestamp, close]) => ({ symbol, interval: '1h', timestamp, open: close, high: close, low: close, close, volume: 1_000 }));
 }
 
 describe('calculatePerformanceSnapshots', () => {

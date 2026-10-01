@@ -6,6 +6,7 @@ export type StrategyParams = Record<string, StrategyParamValue>;
 
 export interface Candle {
   symbol: string;
+  interval: CandleInterval;
   timestamp: number;
   open: number;
   high: number;

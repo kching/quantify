@@ -11,7 +11,7 @@ describe('core strategy engine', () => {
     const candles: Candle[] = Array.from({ length: 80 }, (_, index) => {
       const close = 100 + index;
       return {
-        symbol: 'TEST.AX', timestamp: index, open: close, high: close + 1,
+        symbol: 'TEST.AX', interval: '1d', timestamp: index, open: close, high: close + 1,
         low: close - 1, close, volume: 1_000,
       };
     });

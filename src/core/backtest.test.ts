@@ -4,7 +4,7 @@ import type { Candle, SignalResult, SignalStrategy, SignalType } from './types';
 
 function makeCandles(length: number): Candle[] {
   return Array.from({ length }, (_, index) => ({
-    symbol: 'TEST.AX', timestamp: index, open: 100, high: 101,
+    symbol: 'TEST.AX', interval: '1d', timestamp: index, open: 100, high: 101,
     low: 99, close: 100, volume: 1_000,
   }));
 }

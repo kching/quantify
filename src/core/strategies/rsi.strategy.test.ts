@@ -4,7 +4,7 @@ import type { Candle } from '../types';
 
 function makeCandles(closes: readonly number[]): Candle[] {
   return closes.map((close, index) => ({
-    symbol: 'TEST.AX', timestamp: index, open: close, high: close + 1,
+    symbol: 'TEST.AX', interval: '1d', timestamp: index, open: close, high: close + 1,
     low: close - 1, close, volume: 1_000,
   }));
 }

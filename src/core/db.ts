@@ -54,6 +54,8 @@ const portfolioPerformance = sqliteTable('portfolio_performance', {
   contributedCapital: real('contributed_capital').notNull().default(0), profitLoss: real('profit_loss').notNull(),
 }, (table) => [uniqueIndex('portfolio_performance_once_per_candle').on(table.portfolioId, table.timestamp)]);
 export const TIME_SERIES_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+export const DAILY_CANDLE_RETENTION_MS = 10 * 365 * 24 * 60 * 60 * 1000;
+export const DAILY_CANDLE_HISTORY_DAYS = 10 * 365;
 
 const dbPath = process.env.QUANTIFY_DB_PATH ?? join(process.cwd(), 'data', 'quantify.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
@@ -357,11 +359,12 @@ export async function saveCandles(interval: CandleInterval, rows: readonly Candl
 
 export async function evictExpiredTimeSeriesData(referenceTime = Date.now()): Promise<void> {
   await ensureDatabase();
-  const cutoff = referenceTime - TIME_SERIES_RETENTION_MS;
+  const hourlyCutoff = referenceTime - TIME_SERIES_RETENTION_MS;
+  const dailyCandleCutoff = referenceTime - DAILY_CANDLE_RETENTION_MS;
   await Promise.all([
-    db.delete(candles).where(sql`${candles.timestamp} < ${cutoff}`).run(),
-    db.delete(holdingPerformance).where(sql`${holdingPerformance.timestamp} < ${cutoff}`).run(),
-    db.delete(portfolioPerformance).where(sql`${portfolioPerformance.timestamp} < ${cutoff}`).run(),
+    db.delete(candles).where(sql`(${candles.interval} = '1d' AND ${candles.timestamp} < ${dailyCandleCutoff}) OR (${candles.interval} != '1d' AND ${candles.timestamp} < ${hourlyCutoff})`).run(),
+    db.delete(holdingPerformance).where(sql`${holdingPerformance.timestamp} < ${hourlyCutoff}`).run(),
+    db.delete(portfolioPerformance).where(sql`${portfolioPerformance.timestamp} < ${hourlyCutoff}`).run(),
   ]);
 }
 

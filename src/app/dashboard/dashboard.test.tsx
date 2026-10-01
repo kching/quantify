@@ -164,11 +164,11 @@ beforeEach(() => {
   };
   scanPayload = {
     signals: [{ daily: [buySignal, rsiSignal], hourly: [{ ...buySignal, signal: 'HOLD' }], dailyCandles: [
-      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 1), open: 190, high: 202, low: 188, close: 200, volume: 100_000 },
-      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 2), open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
+      { symbol: 'MQG.AX', interval: '1d', timestamp: Date.UTC(2025, 0, 1), open: 190, high: 202, low: 188, close: 200, volume: 100_000 },
+      { symbol: 'MQG.AX', interval: '1d', timestamp: Date.UTC(2025, 0, 2), open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
     ], hourlyCandles: [
-      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 2, 1), open: 198, high: 202, low: 197, close: 200, volume: 10_000 },
-      { symbol: 'MQG.AX', timestamp: Date.UTC(2025, 0, 2, 2), open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
+      { symbol: 'MQG.AX', interval: '1h', timestamp: Date.UTC(2025, 0, 2, 1), open: 198, high: 202, low: 197, close: 200, volume: 10_000 },
+      { symbol: 'MQG.AX', interval: '1h', timestamp: Date.UTC(2025, 0, 2, 2), open: 200, high: 205, low: 199, close: 204, volume: 12_000 },
     ] }],
     warnings: [],
   };

@@ -7,7 +7,7 @@ function makeCandles(): Candle[] {
     const close = 100 + index;
     const volume = index < 70 ? 100 : index < 110 ? 8_000 : 100;
     return {
-      symbol: 'TEST.AX', timestamp: index, open: close, high: close + 0.5,
+      symbol: 'TEST.AX', interval: '1d', timestamp: index, open: close, high: close + 0.5,
       low: close - 0.5, close, volume,
     };
   });

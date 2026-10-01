@@ -15,7 +15,7 @@ const now = Date.now();
 const tradeTime = now - 5 * HOUR;
 
 function candle(symbol: string, timestamp: number, close: number): Candle {
-  return { symbol, timestamp, open: close, high: close, low: close, close, volume: 1_000 };
+  return { symbol, interval: '1h', timestamp, open: close, high: close, low: close, close, volume: 1_000 };
 }
 
 afterAll(async () => {
@@ -89,7 +89,7 @@ describe('trade and performance persistence', () => {
     expect(performance.holdings.map((point) => point.timestamp)).not.toContain(outOfRangeTimestamp);
   });
 
-  it('evicts time-series older than 12 months while preserving ledgers and current portfolio value', async () => {
+  it('evicts hourly data after 12 months and daily candles after 10 years while preserving ledgers', async () => {
     const portfolio = await database.createPortfolio('Time-series retention');
     const oldTimestamp = now - 400 * 24 * HOUR;
     const currentTimestamp = now - HOUR;
@@ -98,6 +98,10 @@ describe('trade and performance persistence', () => {
     await database.saveCandles('1h', [
       candle('AAA.AX', oldTimestamp, 90),
       candle('AAA.AX', currentTimestamp, 120),
+    ]);
+    await database.saveCandles('1d', [
+      { ...candle('AAA.AX', now - 11 * 365 * 24 * HOUR, 80), interval: '1d' },
+      { ...candle('AAA.AX', now - 2 * 365 * 24 * HOUR, 100), interval: '1d' },
     ]);
     await database.savePerformanceSnapshots(portfolio.id, {
       holdings: [
@@ -113,6 +117,7 @@ describe('trade and performance persistence', () => {
     await database.evictExpiredTimeSeriesData(now);
 
     expect((await database.getCandles('AAA.AX', '1h')).map((row) => row.timestamp)).toEqual([currentTimestamp]);
+    expect((await database.getCandles('AAA.AX', '1d')).map((row) => row.timestamp)).toEqual([now - 2 * 365 * 24 * HOUR]);
     expect((await database.listPerformance(portfolio.id)).holdings.map((point) => point.timestamp)).toEqual([currentTimestamp]);
     expect(await database.listTrades(portfolio.id)).toHaveLength(1);
     expect(await database.listCashTransactions(portfolio.id)).toHaveLength(1);

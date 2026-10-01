@@ -1,4 +1,4 @@
-import { getCandles, saveCandles } from '@/core/db';
+import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, saveCandles } from '@/core/db';
 import { runBacktest } from '@/core/backtest';
 import { strategies } from '@/core/engine';
 import { fetchYahooCandles } from '@/core/providers/yahoo.provider';
@@ -28,10 +28,11 @@ export async function GET(request: Request): Promise<Response> {
     }
   }
   let candles = await getCandles(symbol, interval);
-  if (!candles.length) {
+  const dailyCutoff = Date.now() - DAILY_CANDLE_RETENTION_MS;
+  if (!candles.length || candles[0].timestamp > dailyCutoff) {
     try {
-      const fetched = await fetchYahooCandles(symbol, interval, 1825);
-      await saveCandles(interval, fetched);
+      const fetched = await fetchYahooCandles(symbol, interval, DAILY_CANDLE_HISTORY_DAYS);
+      await saveCandles(interval, fetched.filter((candle) => candle.timestamp >= dailyCutoff));
       candles = await getCandles(symbol, interval);
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : 'Unable to load historical data.' }, { status: 502 });
@@ -39,7 +40,7 @@ export async function GET(request: Request): Promise<Response> {
   }
   if (candles.length < 70) return Response.json({ error: 'At least 70 daily candles are needed for this backtest.' }, { status: 422 });
   const days = Number(query.get('days') ?? '365');
-  const cutoff = Date.now() - Math.min(Math.max(Number.isFinite(days) ? days : 365, 30), 1825) * 86_400_000;
+  const cutoff = Date.now() - Math.min(Math.max(Number.isFinite(days) ? days : 365, 30), DAILY_CANDLE_HISTORY_DAYS) * 86_400_000;
   const window = candles.filter((candle) => candle.timestamp >= cutoff);
   return Response.json({ result: runBacktest(symbol, window, strategy, 10_000, params) });
 }

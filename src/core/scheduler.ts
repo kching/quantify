@@ -1,4 +1,4 @@
-import { updateAllPortfolioMarkets } from './market';
+import { updateAllPortfolioDailyCandles, updateAllPortfolioMarkets } from './market';
 import { evictExpiredTimeSeriesData } from './db';
 import { publishMarketUpdate } from './market-update-events';
 
@@ -8,6 +8,7 @@ const DAY_MS = 24 * HOUR_MS;
 interface SchedulerGlobal {
   quantifyHourlyTimer?: ReturnType<typeof setInterval>;
   quantifyDailyRetentionTimer?: ReturnType<typeof setInterval>;
+  quantifyDailyCandleTimer?: ReturnType<typeof setTimeout>;
   quantifyHourlyRunActive?: boolean;
   quantifyRetentionRunActive?: boolean;
 }
@@ -34,12 +35,36 @@ async function runRetention(): Promise<void> {
   schedulerGlobal.quantifyRetentionRunActive = true;
   try {
     await evictExpiredTimeSeriesData();
-    console.info('[quantify] Time-series retention complete: data older than 12 months removed.');
+    console.info('[quantify] Time-series retention complete: hourly data older than 12 months and daily candles older than 10 years removed.');
   } catch (error) {
     console.error('[quantify] Scheduled time-series retention failed.', error);
   } finally {
     schedulerGlobal.quantifyRetentionRunActive = false;
   }
+}
+
+async function runDailyCandleUpdate(): Promise<void> {
+  try {
+    const result = await updateAllPortfolioDailyCandles();
+    console.info(`[quantify] Daily candle update complete: ${result.symbolCount} unique tickers backfilled.`);
+    for (const warning of result.warnings) console.warn(`[quantify] ${warning}`);
+  } catch (error) {
+    console.error('[quantify] Scheduled daily candle update failed.', error);
+  }
+}
+
+function millisecondsUntilNextMidnight(): number {
+  const nextMidnight = new Date();
+  nextMidnight.setHours(24, 0, 0, 0);
+  return Math.max(1, nextMidnight.getTime() - Date.now());
+}
+
+function scheduleNextDailyCandleUpdate(): void {
+  schedulerGlobal.quantifyDailyCandleTimer = setTimeout(() => {
+    void runDailyCandleUpdate();
+    scheduleNextDailyCandleUpdate();
+  }, millisecondsUntilNextMidnight());
+  schedulerGlobal.quantifyDailyCandleTimer.unref?.();
 }
 
 async function runStartupWork(): Promise<void> {
@@ -54,5 +79,6 @@ export function startHourlyMarketScheduler(): void {
   schedulerGlobal.quantifyHourlyTimer.unref?.();
   schedulerGlobal.quantifyDailyRetentionTimer = setInterval(() => void runRetention(), DAY_MS);
   schedulerGlobal.quantifyDailyRetentionTimer.unref?.();
+  scheduleNextDailyCandleUpdate();
   void runStartupWork();
 }
