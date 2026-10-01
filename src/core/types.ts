@@ -26,6 +26,7 @@ export interface SignalResult {
   indicators: Record<string, number>;
   label?: string;
   signalId?: number;
+  stateUpdatedAt?: number;
 }
 
 export interface SignalStrategy {
@@ -63,9 +64,11 @@ export interface HoldingStrategy {
   label: string;
   name: string;
   params: StrategyParams;
+  lastSignal: SignalType | null;
+  signalUpdatedAt: number | null;
 }
 
-export type HoldingStrategyInput = Omit<HoldingStrategy, 'id'> & { id?: number };
+export type HoldingStrategyInput = Omit<HoldingStrategy, 'id' | 'lastSignal' | 'signalUpdatedAt'> & { id?: number };
 
 export interface PortfolioTrade {
   id: number;

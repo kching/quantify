@@ -50,6 +50,17 @@ describe('trade and performance persistence', () => {
     expect(await database.getHoldingStrategy(secondPortfolio.id, 'TEST.AX')).not.toBeNull();
   });
 
+  it('records signal state timestamps only when the state changes', async () => {
+    const portfolio = await database.createPortfolio('Signal state history');
+    await database.addHolding(portfolio.id, 'STATE.AX');
+    const strategy = await database.saveHoldingStrategy({ portfolioId: portfolio.id, symbol: 'STATE.AX', label: 'State tracker', name: 'rsi-14', params: { period: 14 } });
+
+    expect(await database.recordSignalState(portfolio.id, strategy.id, 'BUY', 'admin', 1_000)).toBe(1_000);
+    expect(await database.recordSignalState(portfolio.id, strategy.id, 'BUY', 'admin', 2_000)).toBe(1_000);
+    expect(await database.recordSignalState(portfolio.id, strategy.id, 'HOLD', 'admin', 3_000)).toBe(3_000);
+    expect(await database.getHoldingStrategy(portfolio.id, 'STATE.AX')).toMatchObject({ lastSignal: 'HOLD', signalUpdatedAt: 3_000 });
+  });
+
   it('records a buy and sell ledger, prevents overselling, and captures hourly snapshots', async () => {
     const [portfolio] = await database.listPortfolios();
     expect(portfolio.holdings).toHaveLength(5);

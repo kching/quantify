@@ -1,5 +1,5 @@
 import { loadStrategy } from './engine';
-import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, listHoldingStrategies, listPortfolioTradeSymbols, listPortfolios, recordAlert, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
+import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, listHoldingStrategies, listPortfolioTradeSymbols, listPortfolios, recordAlert, recordSignalState, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
 import { capturePortfolioPerformance } from './performance.service';
 import { fetchYahooCandles } from './providers/yahoo.provider';
 import type { Candle, CandleInterval, HoldingStrategy, SignalResult, SignalStrategy, StrategyParams } from './types';
@@ -117,8 +117,10 @@ export async function scanPortfolio(portfolioId: number, userId = 'admin'): Prom
   const signals = await Promise.all([...symbols].map(async (symbol) => {
     const configured = holdingStrategies.filter((holdingStrategy) => holdingStrategy.symbol === symbol);
     const result = await scanSymbol(symbol, warnings, configured);
-    for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal, userId);
-    return { symbol, ...result };
+    const daily = await Promise.all(result.daily.map(async (signal) => ({ ...signal, stateUpdatedAt: await recordSignalState(portfolioId, signal.signalId ?? 0, signal.signal, userId) })));
+    const statefulResult = { ...result, daily };
+    for (const signal of daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal, userId);
+    return { symbol, ...statefulResult };
   }));
   await capturePortfolioPerformance(portfolioId);
   return { signals, warnings };
@@ -141,7 +143,8 @@ export async function updateAllPortfolioMarkets(): Promise<{ portfolioCount: num
   await Promise.all([...ownersBySymbol].map(async ([symbol, owners]) => {
     await Promise.all(owners.map(async (owner) => {
       const result = await scanSymbol(symbol, warnings, owner.holdingStrategies);
-      for (const signal of result.daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(owner.id, signal, owner.userId);
+      const daily = await Promise.all(result.daily.map(async (signal) => ({ ...signal, stateUpdatedAt: await recordSignalState(owner.id, signal.signalId ?? 0, signal.signal, owner.userId) })));
+      for (const signal of daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(owner.id, signal, owner.userId);
     }));
   }));
   await Promise.all(portfolios.map(({ id }) => capturePortfolioPerformance(id)));

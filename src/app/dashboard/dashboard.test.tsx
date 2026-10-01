@@ -418,7 +418,7 @@ describe('Dashboard', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/portfolios/1/cash/1', { method: 'DELETE' }));
     expect(confirmMock).toHaveBeenCalledWith('Delete cash deposit of $100.00? Portfolio performance will be recalculated.');
-    await screen.findByText('Page 1 of 1');
+    expect((await screen.findAllByText('Page 1 of 1')).length).toBeGreaterThanOrEqual(1);
     expect(history.querySelectorAll('.cash-row')).toHaveLength(6);
   });
 

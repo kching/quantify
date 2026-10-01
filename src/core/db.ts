@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { foreignKey, index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import type { Candle, CandleInterval, HoldingPerformancePoint, HoldingStrategy, HoldingStrategyInput, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, StrategyParams, UserProfile } from './types';
+import type { Candle, CandleInterval, HoldingPerformancePoint, HoldingStrategy, HoldingStrategyInput, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, SignalType, StrategyParams, UserProfile } from './types';
 
 const users = sqliteTable('users', {
   id: text('id').primaryKey(), name: text('name').notNull(), email: text('email'), image: text('image'),
@@ -23,6 +23,7 @@ const holdings = sqliteTable('holdings', {
 const holdingStrategies = sqliteTable('holding_strategies', {
   id: integer('id').primaryKey({ autoIncrement: true }), portfolioId: integer('portfolio_id').notNull(),
   symbol: text('symbol').notNull(), label: text('label').notNull(), name: text('name').notNull(), params: text('params').notNull(),
+  lastSignal: text('last_signal'), signalUpdatedAt: integer('signal_updated_at'),
 }, (table) => [
   foreignKey({ columns: [table.portfolioId, table.symbol], foreignColumns: [holdings.portfolioId, holdings.symbol], name: 'holding_strategies_holding_fk' }),
 ]);
@@ -72,7 +73,7 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, google_subject TEXT UNIQUE, is_anonymous INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
-    CREATE TABLE IF NOT EXISTS holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE);
+    CREATE TABLE IF NOT EXISTS holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE);
     CREATE TABLE IF NOT EXISTS candles (symbol TEXT NOT NULL, interval TEXT NOT NULL, timestamp INTEGER NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY(symbol, interval, timestamp));
     CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, strategy_id TEXT NOT NULL, signal TEXT NOT NULL, timestamp INTEGER NOT NULL, price REAL NOT NULL, rationale TEXT NOT NULL, indicators TEXT NOT NULL, UNIQUE(portfolio_id, symbol, strategy_id, signal, timestamp));
     CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL, price REAL NOT NULL, brokerage REAL NOT NULL, timestamp INTEGER NOT NULL);
@@ -105,11 +106,15 @@ async function initializeDatabase(): Promise<void> {
   const hasHoldingStrategyId = holdingStrategyColumns.rows.some((row) => String(row.name) === 'id');
   if (!hasHoldingStrategyLabel || !hasHoldingStrategyId) {
     await client.execute('ALTER TABLE holding_strategies RENAME TO holding_strategies_legacy');
-    await client.execute('CREATE TABLE holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE)');
+    await client.execute('CREATE TABLE holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE)');
     const labelExpression = hasHoldingStrategyLabel ? 'label' : 'name';
     await client.execute(`INSERT INTO holding_strategies (id, portfolio_id, symbol, label, name, params) SELECT rowid, portfolio_id, symbol, ${labelExpression}, name, params FROM holding_strategies_legacy`);
     await client.execute('DROP TABLE holding_strategies_legacy');
   }
+  const currentHoldingStrategyColumns = await client.execute('PRAGMA table_info(holding_strategies)');
+  const currentHoldingStrategyColumnNames = new Set(currentHoldingStrategyColumns.rows.map((row) => String(row.name)));
+  if (!currentHoldingStrategyColumnNames.has('last_signal')) await client.execute('ALTER TABLE holding_strategies ADD COLUMN last_signal TEXT');
+  if (!currentHoldingStrategyColumnNames.has('signal_updated_at')) await client.execute('ALTER TABLE holding_strategies ADD COLUMN signal_updated_at INTEGER');
   const adminUser = await db.select({ id: users.id }).from(users).where(eq(users.id, 'admin')).get();
   if (!adminUser) {
     const now = Date.now();
@@ -185,8 +190,9 @@ function isStrategyParams(value: unknown): value is StrategyParams {
   });
 }
 
-function holdingStrategyFromRow(row: { id: number; portfolioId: number; symbol: string; label: string; name: string; params: string }): HoldingStrategy {
-  return { id: row.id, portfolioId: row.portfolioId, symbol: row.symbol, label: row.label, name: row.name, params: parseStrategyParams(row.params) };
+function holdingStrategyFromRow(row: { id: number; portfolioId: number; symbol: string; label: string; name: string; params: string; lastSignal: string | null; signalUpdatedAt: number | null }): HoldingStrategy {
+  const lastSignal = row.lastSignal === 'BUY' || row.lastSignal === 'SELL' || row.lastSignal === 'HOLD' ? row.lastSignal : null;
+  return { id: row.id, portfolioId: row.portfolioId, symbol: row.symbol, label: row.label, name: row.name, params: parseStrategyParams(row.params), lastSignal, signalUpdatedAt: row.signalUpdatedAt };
 }
 
 export async function getHoldingStrategy(portfolioId: number, symbol: string, userId = 'admin'): Promise<HoldingStrategy | null> {
@@ -218,6 +224,18 @@ export async function saveHoldingStrategy(input: HoldingStrategyInput, userId = 
     : await db.update(holdingStrategies).set(values).where(and(eq(holdingStrategies.id, input.id), eq(holdingStrategies.portfolioId, input.portfolioId))).returning().get();
   if (!row) throw new Error('Holding strategy not found.');
   return holdingStrategyFromRow(row);
+}
+
+export async function recordSignalState(portfolioId: number, strategyId: number, signal: SignalType, userId = 'admin', updatedAt = Date.now()): Promise<number> {
+  await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
+  const row = await db.select({ lastSignal: holdingStrategies.lastSignal, signalUpdatedAt: holdingStrategies.signalUpdatedAt })
+    .from(holdingStrategies).where(and(eq(holdingStrategies.id, strategyId), eq(holdingStrategies.portfolioId, portfolioId))).get();
+  if (!row) throw new Error('Holding strategy not found.');
+  if (row.lastSignal === signal && row.signalUpdatedAt != null) return row.signalUpdatedAt;
+  await db.update(holdingStrategies).set({ lastSignal: signal, signalUpdatedAt: updatedAt })
+    .where(and(eq(holdingStrategies.id, strategyId), eq(holdingStrategies.portfolioId, portfolioId))).run();
+  return updatedAt;
 }
 
 export async function removeHoldingStrategy(portfolioId: number, id: number, symbol: string, userId = 'admin'): Promise<void> {
