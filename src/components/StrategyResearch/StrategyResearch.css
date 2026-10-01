@@ -7,7 +7,7 @@
 .signal-form .inline-flex, .save-form .inline-flex { width: 100%; }
 .signal-save-panel, .saved-signals-panel { margin-top: 15px; }
 .section-icon { color: #8c98a8; }
-.save-form { grid-template-columns: 1fr 1fr auto; }
+.save-form { grid-template-columns: 1fr 1fr 1fr auto; }
 .save-message { margin: 12px 0 0; color: #657387; font-size: 12px; }
 .saved-signals { display: grid; gap: 8px; }
 .saved-signal { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid #e9edf3; border-radius: 7px; background: #fafbfd; }

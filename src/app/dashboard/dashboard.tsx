@@ -336,6 +336,21 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
     finally { setBusy(false); }
   }
 
+  async function removeSignal(symbol: string, signalId: number): Promise<void> {
+    if (!portfolioId) return;
+    if (!window.confirm(`Delete the signal from ${symbol}?`)) return;
+    setBusy(true);
+    setSignalError('');
+    try {
+      const response = await fetch(`/api/portfolios/${portfolioId}/strategies/${encodeURIComponent(symbol)}?id=${signalId}`, { method: 'DELETE' });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? 'Could not delete signal.');
+      await refresh();
+    } catch (cause) {
+      setSignalError(cause instanceof Error ? cause.message : 'Could not delete signal.');
+    } finally { setBusy(false); }
+  }
+
   const currentPortfolio = portfolios.find((portfolio) => portfolio.id === portfolioId);
   const latestPortfolioPerformance = performance.portfolio.at(-1);
 
@@ -374,7 +389,7 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
         </section>
 
         <section className="overview-grid" id="portfolio">
-          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={currentPortfolio?.holdings ?? []} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} error={signalError} onDismissError={() => setSignalError('')} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding}/>
+          <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={currentPortfolio?.holdings ?? []} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} error={signalError} onDismissError={() => setSignalError('')} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding} onRemoveSignal={removeSignal}/>
           <RecentMovements tickers={currentPortfolio?.holdings.slice(0, 4).map(({ symbol }) => symbol) ?? []} timeframe="1H · LAST 48 BARS" signals={scan?.signals ?? []}/>
         </section>
 

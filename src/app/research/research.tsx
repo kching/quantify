@@ -44,7 +44,7 @@ export default function ResearchPage({ user, portfolios = [], initialStrategies 
       <div className="dashboard-content">
         <section className="page-heading"><div><p className="section-kicker">STRATEGY LAB</p><h1>Research strategies</h1><p className="page-subtitle">Test a hypothesis against cached daily market history.</p></div></section>
         {error && <div className="notice notice-error" role="alert">{error}</div>}
-        <StrategyResearch result={result} busy={busy} portfolios={portfolios} savedStrategies={savedStrategies} onRun={runBacktest} onSaved={(saved) => setSavedStrategies((current) => [...current.filter((item) => !(item.portfolioId === saved.portfolioId && item.symbol === saved.symbol)), saved])} onDeleted={(portfolioId, symbol) => setSavedStrategies((current) => current.filter((item) => !(item.portfolioId === portfolioId && item.symbol === symbol)))}/>
+        <StrategyResearch result={result} busy={busy} portfolios={portfolios} savedStrategies={savedStrategies} onRun={runBacktest} onSaved={(saved) => setSavedStrategies((current) => [...current.filter((item) => item.id !== saved.id), saved])} onDeleted={(_portfolioId, _symbol, id) => setSavedStrategies((current) => current.filter((item) => item.id !== id))}/>
         <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span></footer>
       </div>
     </main>

@@ -30,13 +30,20 @@ describe('trade and performance persistence', () => {
     await database.addHolding(firstPortfolio.id, 'TEST.AX');
     await database.addHolding(secondPortfolio.id, 'TEST.AX');
 
-    await expect(database.saveHoldingStrategy({ portfolioId: firstPortfolio.id, symbol: 'TEST.AX', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } })).resolves.toMatchObject({
-      portfolioId: firstPortfolio.id, symbol: 'TEST.AX', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
+    const firstStrategy = await database.saveHoldingStrategy({ portfolioId: firstPortfolio.id, symbol: 'TEST.AX', label: 'Klinger trend', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } });
+    expect(firstStrategy).toMatchObject({
+      id: expect.any(Number), portfolioId: firstPortfolio.id, symbol: 'TEST.AX', label: 'Klinger trend', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
     });
-    await database.saveHoldingStrategy({ portfolioId: secondPortfolio.id, symbol: 'TEST.AX', name: 'rsi-14', params: { period: 7 } });
+    await database.saveHoldingStrategy({ portfolioId: firstPortfolio.id, symbol: 'TEST.AX', label: 'RSI reversal', name: 'rsi-14', params: { period: 7 } });
+    await database.saveHoldingStrategy({ portfolioId: secondPortfolio.id, symbol: 'TEST.AX', label: 'RSI reversal', name: 'rsi-14', params: { period: 7 } });
 
-    expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toMatchObject({ name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } });
-    expect(await database.listHoldingStrategies(secondPortfolio.id)).toEqual([{ portfolioId: secondPortfolio.id, symbol: 'TEST.AX', name: 'rsi-14', params: { period: 7 } }]);
+    expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toMatchObject({ label: 'Klinger trend', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } });
+    expect(await database.listHoldingStrategies(firstPortfolio.id)).toHaveLength(2);
+    expect(await database.listHoldingStrategies(secondPortfolio.id)).toMatchObject([{ id: expect.any(Number), portfolioId: secondPortfolio.id, symbol: 'TEST.AX', label: 'RSI reversal', name: 'rsi-14', params: { period: 7 } }]);
+    const strategyToDelete = (await database.listHoldingStrategies(firstPortfolio.id)).find((strategy) => strategy.label === 'Klinger trend');
+    if (!strategyToDelete) throw new Error('Expected strategy to delete.');
+    await database.removeHoldingStrategy(firstPortfolio.id, strategyToDelete.id, 'TEST.AX');
+    expect(await database.listHoldingStrategies(firstPortfolio.id)).toHaveLength(1);
 
     await database.removeHolding(firstPortfolio.id, 'TEST.AX');
     expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toBeNull();
