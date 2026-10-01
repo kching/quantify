@@ -57,7 +57,7 @@ export default function Index({ hasPortfolio, holdings, signals, warnings, error
     if (await onAddHolding(symbolInput)) setSymbolInput('');
   }
 
-  return <Card className="signals-card"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL MONITOR</p><CardTitle>Portfolio signals</CardTitle></div></CardHeader>
+  return <Card className="signals-card"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL MONITOR</p><CardTitle>Watchlist</CardTitle></div></CardHeader>
     <CardContent className="signals-content">
       {hasPortfolio && <div className="watchlist-tools"><form className="inline-form" onSubmit={(event) => void addHolding(event)}><Input aria-label="ASX ticker" placeholder="Add ticker e.g. QQQ" value={symbolInput} onChange={(event) => setSymbolInput(event.target.value)} maxLength={20}/><Button type="submit" variant="outline" size="icon" className="add-asset-button" aria-label="Add asset" title="Add asset" disabled={busy || !symbolInput.trim()}><Plus className="size-4"/></Button></form></div>}
       <div className="table-wrap"><table><thead><tr><th>ASSET</th><th>LAST PRICE</th><th>SIGNALS</th><th>DAILY CHANGE</th><th><span className="sr-only">ACTIONS</span></th></tr></thead><tbody>{holdings.map((holding) => {

@@ -1,4 +1,4 @@
-import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, saveCandles } from '@/core/db';
+import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, TIME_SERIES_RETENTION_MS, getCandles, saveCandles } from '@/core/db';
 import { runBacktest } from '@/core/backtest';
 import { strategies } from '@/core/engine';
 import { fetchYahooCandles } from '@/core/providers/yahoo.provider';
@@ -15,7 +15,8 @@ export async function GET(request: Request): Promise<Response> {
   const strategyId = query.get('strategy') ?? 'klinger-oscillator';
   const strategy = strategies.find((candidate) => candidate.id === strategyId);
   if (!/^[A-Z0-9.^-]{1,20}$/.test(symbol) || !strategy) return Response.json({ error: 'Provide a valid ticker and strategy.' }, { status: 400 });
-  const interval: CandleInterval = '1d';
+  const cadence = query.get('cadence') === 'hourly' ? 'hourly' : 'daily';
+  const interval: CandleInterval = cadence === 'hourly' ? '1h' : '1d';
   let params: StrategyParams = {};
   const rawParams = query.get('params');
   if (rawParams) {
@@ -28,19 +29,22 @@ export async function GET(request: Request): Promise<Response> {
     }
   }
   let candles = await getCandles(symbol, interval);
-  const dailyCutoff = Date.now() - DAILY_CANDLE_RETENTION_MS;
-  if (!candles.length || candles[0].timestamp > dailyCutoff) {
+  const retentionMs = interval === '1h' ? TIME_SERIES_RETENTION_MS : DAILY_CANDLE_RETENTION_MS;
+  const historyDays = interval === '1h' ? Math.floor(TIME_SERIES_RETENTION_MS / 86_400_000) : DAILY_CANDLE_HISTORY_DAYS;
+  const cutoff = Date.now() - retentionMs;
+  if (!candles.length || candles[0].timestamp > cutoff) {
     try {
-      const fetched = await fetchYahooCandles(symbol, interval, DAILY_CANDLE_HISTORY_DAYS);
-      await saveCandles(interval, fetched.filter((candle) => candle.timestamp >= dailyCutoff));
+      const fetched = await fetchYahooCandles(symbol, interval, historyDays);
+      await saveCandles(interval, fetched.filter((candle) => candle.timestamp >= cutoff));
       candles = await getCandles(symbol, interval);
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : 'Unable to load historical data.' }, { status: 502 });
     }
   }
-  if (candles.length < 70) return Response.json({ error: 'At least 70 daily candles are needed for this backtest.' }, { status: 422 });
-  const days = Number(query.get('days') ?? '365');
-  const cutoff = Date.now() - Math.min(Math.max(Number.isFinite(days) ? days : 365, 30), DAILY_CANDLE_HISTORY_DAYS) * 86_400_000;
-  const window = candles.filter((candle) => candle.timestamp >= cutoff);
+  if (candles.length < 70) return Response.json({ error: `At least 70 ${cadence} candles are needed for this backtest.` }, { status: 422 });
+  const requestedDays = Number(query.get('days') ?? '365');
+  const days = Math.min(Math.max(Number.isFinite(requestedDays) ? requestedDays : 365, 30), historyDays);
+  const windowCutoff = Date.now() - days * 86_400_000;
+  const window = candles.filter((candle) => candle.timestamp >= windowCutoff);
   return Response.json({ result: runBacktest(symbol, window, strategy, 10_000, params) });
 }

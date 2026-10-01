@@ -1,68 +1,123 @@
 'use client';
 
-import { useState } from 'react';
-import { Activity, LoaderCircle, Pencil, Save, Trash2 } from 'lucide-react';
-import type { BacktestResult, HoldingStrategy, Portfolio } from '@/core/types';
-import { Badge } from '@/components/ui/badge';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, LoaderCircle, Save, Trash2 } from 'lucide-react';
+import type { BacktestResult, HoldingStrategy, Portfolio, StrategyParams } from '@/core/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { SelectControl, SelectOption } from '@/components/ui/select';
+import { useToast } from '@/components/ui/toast';
 import './StrategyResearch.css';
 
-export interface StrategyResearchInput { symbol: string; strategy: string; params: Record<string, number>; }
+type Cadence = 'hourly' | 'daily';
+interface ParameterRange { min: number; max: number; }
+interface StrategyRanges { period: ParameterRange; fastPeriod: ParameterRange; slowPeriod: ParameterRange; signalPeriod: ParameterRange; }
+export interface StrategyResearchInput { symbol: string; strategy: string; cadence: Cadence; days: number; ranges: StrategyRanges; }
+export interface StrategySweepResult extends StrategyResearchInput { runs: BacktestResult[]; }
 interface StrategyResearchProps {
-  result: BacktestResult | null;
+  result: StrategySweepResult | null;
   busy: boolean;
   portfolios?: Array<Portfolio & { holdings: Array<{ symbol: string; addedAt: number }> }>;
   savedStrategies?: HoldingStrategy[];
   onRun: (input: StrategyResearchInput) => Promise<boolean>;
+  onBack: () => void;
   onSaved?: (strategy: HoldingStrategy) => void;
   onDeleted?: (portfolioId: number, symbol: string, id: number) => void;
 }
-const strategyLabels: Record<string, string> = { 'klinger-oscillator': 'Klinger Volume Oscillator', 'rsi-14': 'RSI (14)' };
 
-export default function StrategyResearch({ result, busy, portfolios = [], savedStrategies = [], onRun, onSaved = () => undefined, onDeleted = () => undefined }: StrategyResearchProps): React.JSX.Element {
+const strategyLabels: Record<string, string> = { 'klinger-oscillator': 'Klinger Volume Oscillator', 'rsi-14': 'RSI (14)' };
+const rangeOptions: Record<Cadence, Array<{ label: string; days: number }>> = {
+  hourly: [{ label: 'Last month', days: 30 }, { label: 'Last 3 months', days: 90 }, { label: 'Last 6 months', days: 182 }, { label: 'Last 1 year', days: 365 }],
+  daily: [{ label: 'Last year', days: 365 }, { label: 'Last 3 years', days: 1095 }, { label: 'Last 5 years', days: 1825 }, { label: 'Last 10 years', days: 3650 }],
+};
+const initialRanges: StrategyRanges = { period: { min: 5, max: 30 }, fastPeriod: { min: 10, max: 60 }, slowPeriod: { min: 30, max: 100 }, signalPeriod: { min: 5, max: 30 } };
+
+function parameterSets(sweep: StrategySweepResult): StrategyParams[] {
+  const values = (min: number, max: number): number[] => Array.from(new Set([min, Math.round((min + max) / 2), max]));
+  return sweep.strategy === 'rsi-14'
+    ? values(sweep.ranges.period.min, sweep.ranges.period.max).map((period) => ({ period }))
+    : [
+        { fastPeriod: sweep.ranges.fastPeriod.min, slowPeriod: sweep.ranges.slowPeriod.min, signalPeriod: sweep.ranges.signalPeriod.min },
+        { fastPeriod: sweep.ranges.fastPeriod.max, slowPeriod: sweep.ranges.slowPeriod.max, signalPeriod: sweep.ranges.signalPeriod.max },
+        { fastPeriod: sweep.ranges.fastPeriod.min, slowPeriod: sweep.ranges.slowPeriod.max, signalPeriod: sweep.ranges.signalPeriod.min },
+        { fastPeriod: sweep.ranges.fastPeriod.max, slowPeriod: sweep.ranges.slowPeriod.min, signalPeriod: sweep.ranges.signalPeriod.max },
+        { fastPeriod: Math.round((sweep.ranges.fastPeriod.min + sweep.ranges.fastPeriod.max) / 2), slowPeriod: Math.round((sweep.ranges.slowPeriod.min + sweep.ranges.slowPeriod.max) / 2), signalPeriod: Math.round((sweep.ranges.signalPeriod.min + sweep.ranges.signalPeriod.max) / 2) },
+      ];
+}
+function paramsLabel(params: StrategyParams): string { return Object.entries(params).map(([key, value]) => `${key.replace('Period', '')} ${String(value)}`).join(' · '); }
+interface ChartScale { min: number; max: number; ticks: number[]; }
+function chartScale(values: number[]): ChartScale {
+  const maximum = Math.max(...values, 0);
+  const minimum = Math.min(...values, 0);
+  const step = Math.max(1, Math.ceil((maximum - minimum) / 4 / 5) * 5);
+  const min = Math.floor(minimum / step) * step;
+  const max = Math.ceil(maximum / step) * step || step;
+  return { min, max, ticks: Array.from({ length: 5 }, (_, index) => min + ((max - min) * index) / 4) };
+}
+function percentLabel(value: number): string { return `${value > 0 ? '+' : ''}${value.toFixed(0)}%`; }
+
+export default function StrategyResearch({ result, busy, portfolios = [], savedStrategies = [], onRun, onBack, onSaved = () => undefined, onDeleted = () => undefined }: StrategyResearchProps): React.JSX.Element {
   const [symbol, setSymbol] = useState('MQG.AX');
-  const [signalId, setSignalId] = useState<number | null>(null);
   const [strategy, setStrategy] = useState('klinger-oscillator');
-  const [label, setLabel] = useState('');
-  const [params, setParams] = useState<Record<string, number>>({ fastPeriod: 34, slowPeriod: 55, signalPeriod: 13 });
+  const [cadence, setCadence] = useState<Cadence>('hourly');
+  const [days, setDays] = useState(90);
+  const [ranges, setRanges] = useState<StrategyRanges>(initialRanges);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [signalLabel, setSignalLabel] = useState<string | null>(null);
   const [portfolioId, setPortfolioId] = useState(String(portfolios[0]?.id ?? ''));
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
+  const toast = useToast();
   const selectedPortfolio = portfolios.find((portfolio) => String(portfolio.id) === portfolioId);
   const portfolioHoldings = selectedPortfolio?.holdings ?? [];
+  const selectedRun = result?.runs[selectedIndex] ?? result?.runs[0];
+  const selectedRunParams = result ? parameterSets(result)[selectedIndex] ?? {} : {};
+  const defaultSignalLabel = paramsLabel(selectedRunParams);
+  const displayedSignalLabel = signalLabel ?? defaultSignalLabel;
+  const normalizedSignalLabel = displayedSignalLabel.trim();
+  const returnScale = result ? chartScale(result.runs.map((run) => run.totalReturnPct)) : chartScale([0]);
+  const drawdownScale = result ? chartScale(result.runs.map((run) => Math.abs(run.maxDrawdownPct))) : chartScale([0]);
+  const ranked = useMemo(() => result ? [...result.runs].sort((a, b) => b.totalReturnPct - a.totalReturnPct) : [], [result]);
+  const lowestDrawdown = useMemo(() => result ? [...result.runs].sort((a, b) => a.maxDrawdownPct - b.maxDrawdownPct)[0] : undefined, [result]);
+  const balancedPick = useMemo(() => result ? [...result.runs].sort((a, b) => (b.totalReturnPct + b.maxDrawdownPct) - (a.totalReturnPct + a.maxDrawdownPct))[0] : undefined, [result]);
 
-  function changeStrategy(next: string): void { setStrategy(next); setParams(next === 'rsi-14' ? { period: 14 } : { fastPeriod: 34, slowPeriod: 55, signalPeriod: 13 }); }
-  function setParam(name: string, value: string): void { const number = Number(value); setParams((current) => ({ ...current, [name]: Number.isFinite(number) ? number : 0 })); }
-  async function submitBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> { event.preventDefault(); await onRun({ symbol, strategy, params }); }
-  function loadSaved(saved: HoldingStrategy): void {
-    setSignalId(saved.id); setSymbol(saved.symbol); setLabel(saved.label); setStrategy(saved.name); setParams(Object.fromEntries(Object.entries(saved.params).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))); setPortfolioId(String(saved.portfolioId)); setMessage(`Editing ${saved.label} · ${saved.symbol} · ${strategyLabels[saved.name] ?? saved.name}`);
-  }
+  function showToast(message: string, kind: 'success' | 'error'): void { toast(message, kind); }
+
+  function changeStrategy(next: string): void { setStrategy(next); setRanges(next === 'rsi-14' ? { ...initialRanges, period: { min: 5, max: 30 } } : initialRanges); }
+  function changeCadence(next: Cadence): void { setCadence(next); setDays(rangeOptions[next][next === 'hourly' ? 1 : 2].days); }
+  function updateRange(name: keyof StrategyRanges, edge: keyof ParameterRange, value: string): void { const number = Number(value); if (Number.isFinite(number)) setRanges((current) => ({ ...current, [name]: { ...current[name], [edge]: Math.max(1, Math.round(number)) } })); }
+  async function submitBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> { event.preventDefault(); setSelectedIndex(0); setSignalLabel(null); await onRun({ symbol, strategy, cadence, days, ranges }); }
+  function selectRun(index: number): void { setSelectedIndex(index); setSignalLabel(null); }
   async function saveSignal(): Promise<void> {
-    setSaving(true); setMessage('');
+    if (!selectedRun || !portfolioId || !normalizedSignalLabel) {
+      showToast('Enter a label before saving the signal.', 'error');
+      return;
+    }
+    setSaving(true);
     try {
-      const response = await fetch(`/api/portfolios/${portfolioId}/strategies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: signalId ?? undefined, symbol, label, name: strategy, params }) });
+      const response = await fetch(`/api/portfolios/${portfolioId}/strategies`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol, label: normalizedSignalLabel, name: strategy, params: selectedRunParams }) });
       const body = await response.json() as { strategy?: HoldingStrategy; error?: string };
       if (!response.ok || !body.strategy) throw new Error(body.error ?? 'Unable to save signal.');
-      onSaved(body.strategy); setMessage(`${symbol} strategy saved to ${selectedPortfolio?.name ?? 'portfolio'}.`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to save signal.'); } finally { setSaving(false); }
+      onSaved(body.strategy); showToast(`${symbol} signal saved to ${selectedPortfolio?.name ?? 'portfolio'}.`, 'success');
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Unable to save signal.', 'error'); } finally { setSaving(false); }
   }
-  async function deleteSignal(saved: HoldingStrategy): Promise<void> {
-    if (!window.confirm(`Delete the ${saved.symbol} strategy?`)) return;
-    const response = await fetch(`/api/portfolios/${saved.portfolioId}/strategies/${encodeURIComponent(saved.symbol)}`, { method: 'DELETE' });
-    if (response.ok) onDeleted(saved.portfolioId, saved.symbol, saved.id); else setMessage('Unable to delete signal.');
-  }
-  const parameterFields: Array<[string, string]> = strategy === 'rsi-14' ? [['period', 'RSI period']] : [['fastPeriod', 'Fast period'], ['slowPeriod', 'Slow period'], ['signalPeriod', 'Signal period']];
+  async function deleteSignal(saved: HoldingStrategy): Promise<void> { const response = await fetch(`/api/portfolios/${saved.portfolioId}/strategies/${encodeURIComponent(saved.symbol)}`, { method: 'DELETE' }); if (response.ok) { onDeleted(saved.portfolioId, saved.symbol, saved.id); showToast(`${saved.symbol} signal deleted.`, 'success'); } else showToast('Unable to delete signal.', 'error'); }
 
-  return <section id="research" className="research-section">
-    <Card className="backtest-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL BUILDER</p><CardTitle>Create and test a signal</CardTitle><CardDescription>Choose a strategy, tune its parameters, and test it against cached daily history.</CardDescription></div><Badge variant="outline">1Y test window</Badge></CardHeader><CardContent>
-      <form className="signal-form" onSubmit={(event) => void submitBacktest(event)}><label>Ticker<Input aria-label="Ticker for backtest" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())}/></label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label>{parameterFields.map(([name, label]) => <label key={name}>{label}<Input aria-label={label} type="number" min="1" step="1" value={params[name] ?? ''} onChange={(event) => setParam(name, event.target.value)}/></label>)}<Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : <Activity className="size-4"/>}{busy ? 'Working…' : 'Run backtest'}</Button></form>
-      {result && <><div className="backtest-result-label">LAST RUN · {strategyLabels[result.strategyId] ?? result.strategyId}</div><div className="backtest-results"><div><small>1Y RETURN</small><strong className={result.totalReturnPct >= 0 ? 'positive' : 'negative'}>{result.totalReturnPct.toFixed(1)}%</strong></div><div><small>WIN RATE</small><strong>{result.winRatePct.toFixed(0)}%</strong></div><div><small>MAX DRAWDOWN</small><strong className="negative">{result.maxDrawdownPct.toFixed(1)}%</strong></div><div><small>CLOSED TRADES</small><strong>{result.trades.length}</strong></div></div></>}
-      <p className="method-note">{strategy === 'rsi-14' ? 'BUY when RSI re-enters above 30. SELL when RSI re-enters below 70.' : 'BUY on KVO crossover above its signal line. SELL on crossover below.'} Next-candle open execution; no fees or slippage.</p>
-    </CardContent></Card>
-    <Card className="signal-save-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">PORTFOLIO ASSIGNMENT</p><CardTitle>Save signal to a holding</CardTitle><CardDescription>Assign a required label, ticker, and parameters to a holding. Saving again updates that labeled signal.</CardDescription></div><Save className="section-icon"/></CardHeader><CardContent><div className="save-form"><label>Label<Input aria-label="Signal label" value={label} onChange={(event) => setLabel(event.target.value)} maxLength={80} required/></label><label>Portfolio<SelectControl value={portfolioId} ariaLabel="Portfolio" onValueChange={setPortfolioId}>{portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}</SelectControl></label><label>Holding<SelectControl value={symbol} ariaLabel="Holding" onValueChange={setSymbol}>{portfolioHoldings.length ? portfolioHoldings.map((holding) => <SelectOption key={holding.symbol} value={holding.symbol}>{holding.symbol}</SelectOption>) : <SelectOption value={symbol}>{symbol} (not in portfolio)</SelectOption>}</SelectControl></label><Button onClick={() => void saveSignal()} disabled={saving || !portfolioId || !label.trim()}>{saving ? <LoaderCircle className="size-4 animate-spin"/> : <Save className="size-4"/>}{saving ? 'Saving…' : 'Save signal'}</Button></div>{message && <p className="save-message" role="status">{message}</p>}{!portfolios.length && <p className="method-note">Create a portfolio and add a holding before saving a signal.</p>}</CardContent></Card>
-    <Card className="saved-signals-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SAVED SIGNALS</p><CardTitle>Configured holdings</CardTitle></div></CardHeader><CardContent>{savedStrategies.length ? <div className="saved-signals">{savedStrategies.map((saved) => <div className="saved-signal" key={saved.id}><div><strong>{saved.label}</strong><span>{saved.symbol} · {strategyLabels[saved.name] ?? saved.name} · {Object.entries(saved.params).map(([key, value]) => `${key}: ${value}`).join(' · ')}</span></div><div className="saved-actions"><Button size="sm" variant="ghost" aria-label={`Edit ${saved.label} signal`} onClick={() => loadSaved(saved)}><Pencil className="size-4"/></Button><Button size="sm" variant="ghost" aria-label={`Delete ${saved.label} signal`} onClick={() => void deleteSignal(saved)}><Trash2 className="size-4"/></Button></div></div>)}</div> : <p className="method-note">No saved signals yet.</p>}</CardContent></Card>
+  if (!result) return <Card className="backtest-panel research-setup-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL BUILDER</p><CardTitle>Configure your backtest</CardTitle><CardDescription>Choose a strategy, cadence, time window, and parameter ranges to sweep.</CardDescription></div></CardHeader><CardContent>
+    <form className="research-setup-form" onSubmit={(event) => void submitBacktest(event)}>
+      <div className="setup-grid"><label>Symbol<Input aria-label="Ticker for backtest" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())}/></label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label></div>
+      <div className="field-block"><span className="field-label">Candle cadence</span><div className="choice-row">{(['hourly', 'daily'] as const).map((option) => <button className={cadence === option ? 'choice-button selected' : 'choice-button'} type="button" key={option} onClick={() => changeCadence(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}</div></div>
+      <div className="field-block"><span className="field-label">Backtest window</span><div className="choice-row range-choice-row">{rangeOptions[cadence].map((option) => <button className={days === option.days ? 'choice-button selected' : 'choice-button'} type="button" key={option.days} onClick={() => setDays(option.days)}>{option.label}</button>)}</div></div>
+      <div className="parameter-range-grid">{(strategy === 'rsi-14' ? [['period', 'RSI period']] : [['fastPeriod', 'Fast period'], ['slowPeriod', 'Slow period'], ['signalPeriod', 'Signal period']]).map(([name, label]) => <div className="parameter-range" key={name}><span className="field-label">{label}</span><label>Min<Input aria-label={`${label} minimum`} type="number" min="1" value={ranges[name as keyof StrategyRanges].min} onChange={(event) => updateRange(name as keyof StrategyRanges, 'min', event.target.value)}/></label><label>Max<Input aria-label={`${label} maximum`} type="number" min="1" value={ranges[name as keyof StrategyRanges].max} onChange={(event) => updateRange(name as keyof StrategyRanges, 'max', event.target.value)}/></label></div>)}</div>
+      <div className="setup-actions"><p className="method-note">{cadence === 'hourly' ? 'Hourly cadence uses hourly candles.' : 'Daily cadence uses daily candles.'} The sweep tests the minimum, midpoint, and maximum values in each range.</p><Button type="submit" disabled={busy}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : null}{busy ? 'Running sweep…' : 'Run parameter sweep'}</Button></div>
+    </form>
+  </CardContent></Card>;
+
+  const outcomeCards: Array<{ label: string; run?: BacktestResult; type: string }> = [{ label: 'Highest return', run: ranked[0], type: 'return' }, { label: 'Lowest drawdown', run: lowestDrawdown, type: 'drawdown' }, { label: 'Balanced pick', run: balancedPick, type: 'balanced' }];
+  return <section className="research-results"><div className="results-toolbar"><div><Button variant="ghost" onClick={onBack}><ArrowLeft className="size-4"/>Back to setup</Button></div><div><p className="section-kicker">SWEEP COMPLETE</p><h2>{strategyLabels[result.strategy] ?? result.strategy}</h2><p>{symbol} · {cadence === 'hourly' ? 'Hourly' : 'Daily'} · {rangeOptions[cadence].find((option) => option.days === days)?.label}</p></div><div aria-hidden="true" /></div>
+    <div className="outcome-grid">{outcomeCards.map(({ label, run, type }) => run && <button type="button" className={`outcome-card ${type === 'return' ? 'active' : ''}`} key={label} onClick={() => selectRun(result.runs.indexOf(run))}><span>{label}</span><strong className="positive">{type === 'drawdown' ? `${run.maxDrawdownPct.toFixed(1)}%` : `+${run.totalReturnPct.toFixed(1)}%`}</strong><small>{paramsLabel(parameterSets(result)[result.runs.indexOf(run)] ?? {})}</small></button>)}</div>
+    <div className="results-grid"><Card className="scatter-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">PARAMETER SWEEP</p><CardTitle>Return vs drawdown</CardTitle><CardDescription>Select a dot to inspect that run&apos;s parameters.</CardDescription></div></CardHeader><CardContent><div className="scatter-chart"><span className="axis-label axis-y">RETURN</span><span className="axis-label axis-x">MAX DRAWDOWN</span><div className="chart-grid-lines" aria-hidden="true"/><div className="chart-y-scale" aria-hidden="true">{[...returnScale.ticks].reverse().map((tick) => <span key={tick} style={{ top: `${100 - ((tick - returnScale.min) / (returnScale.max - returnScale.min)) * 100}%` }}>{percentLabel(tick)}</span>)}</div><div className="chart-x-scale" aria-hidden="true">{drawdownScale.ticks.map((tick) => <span key={tick} style={{ left: `${((tick - drawdownScale.min) / (drawdownScale.max - drawdownScale.min)) * 100}%` }}>{percentLabel(tick)}</span>)}</div>{result.runs.map((run, index) => { const drawdown = Math.abs(run.maxDrawdownPct); const x = ((drawdown - drawdownScale.min) / (drawdownScale.max - drawdownScale.min)) * 100; const y = 100 - ((run.totalReturnPct - returnScale.min) / (returnScale.max - returnScale.min)) * 100; return <button type="button" aria-label={`Select run ${index + 1}`} key={`${run.totalReturnPct}-${index}`} className={`scatter-point ${selectedIndex === index ? 'selected' : ''}`} style={{ left: `${x}%`, top: `${y}%` }} onClick={() => selectRun(index)}><span>{index + 1}</span></button>; })}</div><div className="selected-run"><div><span>Selected run</span><strong>{paramsLabel(selectedRunParams) || '—'}</strong></div><div><span>Return</span><strong className="positive">{selectedRun?.totalReturnPct.toFixed(1)}%</strong></div><div><span>Drawdown</span><strong className="negative">-{selectedRun?.maxDrawdownPct.toFixed(1)}%</strong></div></div></CardContent></Card>
+      <Card className="save-signal-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SAVE AS SIGNAL</p><CardTitle>Assign selected parameters</CardTitle><CardDescription>Save the selected run to a holding.</CardDescription></div></CardHeader><CardContent><div className="save-form"><div className="save-params"><span>Parameters</span><strong>{paramsLabel(selectedRunParams)}</strong></div><label>Label<Input aria-label="Signal label" value={displayedSignalLabel} maxLength={80} required aria-required="true" aria-invalid={signalLabel !== null && !normalizedSignalLabel} onChange={(event) => setSignalLabel(event.target.value)} /></label><label>Portfolio<SelectControl value={portfolioId} ariaLabel="Portfolio" onValueChange={setPortfolioId}>{portfolios.map((portfolio) => <SelectOption key={portfolio.id} value={String(portfolio.id)}>{portfolio.name}</SelectOption>)}</SelectControl></label><label>Holding<SelectControl value={symbol} ariaLabel="Holding" onValueChange={setSymbol}>{portfolioHoldings.length ? portfolioHoldings.map((holding) => <SelectOption key={holding.symbol} value={holding.symbol}>{holding.symbol}</SelectOption>) : <SelectOption value={symbol}>{symbol}</SelectOption>}</SelectControl></label><Button onClick={() => void saveSignal()} disabled={saving || !selectedRun || !portfolioId || !normalizedSignalLabel}><Save className="size-4"/>{saving ? 'Saving…' : 'Save selected signal'}</Button></div>{!portfolios.length && <p className="method-note">Create a portfolio and add a holding before saving a signal.</p>}</CardContent></Card></div>
+    {savedStrategies.length > 0 && <Card className="saved-signals-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SAVED SIGNALS</p><CardTitle>Configured holdings</CardTitle></div></CardHeader><CardContent><div className="saved-signals">{savedStrategies.map((saved) => <div className="saved-signal" key={saved.id}><div><strong>{saved.symbol}</strong><span>{saved.label} · {strategyLabels[saved.name] ?? saved.name}</span></div><Button size="sm" variant="ghost" aria-label={`Delete ${saved.symbol} signal`} onClick={() => void deleteSignal(saved)}><Trash2 className="size-4"/></Button></div>)}</div></CardContent></Card>}
   </section>;
 }

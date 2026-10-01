@@ -26,8 +26,8 @@ interface AppSidebarProps {
   user?: Pick<UserProfile, 'name' | 'image'>;
 }
 
-const sections = new Set(['overview', 'portfolio', 'performance', 'ledger']);
-const portfolioNavItems = new Set(['portfolio', 'performance', 'ledger']);
+const sections = new Set(['overview', 'watchlist', 'portfolio', 'ledger']);
+const portfolioNavItems = new Set(['watchlist', 'portfolio', 'ledger']);
 
 function getActiveSection(): string {
   const hash = window.location.hash.slice(1);

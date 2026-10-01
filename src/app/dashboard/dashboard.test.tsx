@@ -207,15 +207,31 @@ describe('Dashboard', () => {
 
     await waitForPortfolio();
     expect(screen.getByRole('link', { name: 'Overview' }).className).toContain('active');
-    expect(screen.getByRole('link', { name: 'Portfolio Performance' }).className).not.toContain('active');
+    expect(screen.getByRole('link', { name: 'Watchlist' }).getAttribute('href')).toBe('/dashboard#watchlist');
+    expect(screen.queryByRole('link', { name: 'Portfolio Signals' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Strategies' }).getAttribute('href')).toBe('/research');
+    expect(screen.queryByRole('link', { name: 'Strategy Research' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Portfolio' }).getAttribute('href')).toBe('/dashboard#portfolio');
+    expect(screen.getByRole('link', { name: 'Ledger' }).getAttribute('href')).toBe('/dashboard#ledger');
+    expect(screen.queryByRole('link', { name: 'Portfolio Performance' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Trade & Cash Ledger' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Portfolio' }).className).not.toContain('active');
 
     await act(async () => {
-      window.location.hash = '#performance';
+      window.location.hash = '#portfolio';
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(screen.getByRole('link', { name: 'Portfolio Performance' }).className).toContain('active');
+    expect(screen.getByRole('link', { name: 'Portfolio' }).className).toContain('active');
     expect(screen.getByRole('link', { name: 'Overview' }).className).not.toContain('active');
+
+    await act(async () => {
+      window.location.hash = '#watchlist';
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByRole('link', { name: 'Watchlist' }).className).toContain('active');
+    expect(await screen.findByRole('heading', { name: 'Watchlist' })).toBeDefined();
   });
 
   it('loads portfolios, scans the selected watchlist and displays daily signals, day change and alerts', async () => {

@@ -16,9 +16,9 @@ const result = {
 };
 
 let status = 200;
-const fetchMock = mock(async (): Promise<Response> => status === 200
+const fetchMock = mock(async (url: string): Promise<Response> => { void url; return status === 200
   ? Response.json({ result })
-  : Response.json({ error: 'Not enough candle history.' }, { status }));
+  : Response.json({ error: 'Not enough hourly candles.' }, { status }); });
 
 async function chooseOption(label: string, optionName: string): Promise<void> {
   await act(async () => {
@@ -44,23 +44,25 @@ afterEach(async () => {
 });
 
 describe('ResearchPage', () => {
-  it('runs a selected strategy backtest and shows its summary', async () => {
+  it('runs a selected strategy sweep and shows the results workspace', async () => {
     render(<ResearchPage/>);
 
     await chooseOption('Backtest strategy', 'RSI (14)');
-    fireEvent.click(screen.getByRole('button', { name: 'Run backtest' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
-    expect(await screen.findByText('LAST RUN · RSI (14)')).toBeDefined();
-    expect(screen.getByText('12.5%')).toBeDefined();
-    expect(screen.getByText('60%')).toBeDefined();
-    expect(fetchMock).toHaveBeenCalledWith('/api/backtest?symbol=MQG.AX&strategy=rsi-14&days=365');
+    expect(await screen.findByText('Return vs drawdown')).toBeDefined();
+    expect(screen.getByText('Highest return')).toBeDefined();
+    expect(screen.getByText('Lowest drawdown')).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('cadence=hourly');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('days=90');
   });
 
   it('shows an API error when the backtest cannot run', async () => {
     status = 422;
     render(<ResearchPage/>);
-    fireEvent.click(screen.getByRole('button', { name: 'Run backtest' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Not enough candle history.');
+    expect((await screen.findByRole('alert')).textContent).toBe('Not enough hourly candles.');
   });
 });

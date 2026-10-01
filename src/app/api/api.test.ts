@@ -85,7 +85,7 @@ const runBacktest = mock(() => ({ symbol: 'TEST.AX', strategyId: 'klinger-oscill
 const fetchYahooCandles = mock(async () => [] as Candle[]);
 
 mock.module('@/core/db', () => ({
-  DAILY_CANDLE_HISTORY_DAYS: 3650, DAILY_CANDLE_RETENTION_MS: 10 * 365 * 24 * 60 * 60 * 1000,
+  DAILY_CANDLE_HISTORY_DAYS: 3650, DAILY_CANDLE_RETENTION_MS: 10 * 365 * 24 * 60 * 60 * 1000, TIME_SERIES_RETENTION_MS: 365 * 24 * 60 * 60 * 1000,
   listPortfolios, createPortfolio, deletePortfolio, addHolding, removeHolding,
   getCandles, saveCandles, listAlerts, listTrades, listTradePage, recordTrade, deletePortfolioTrade, listPerformance,
   listPortfolioTradeSymbols, savePerformanceSnapshots, listCashTransactionPage, recordCashTransaction, deleteCashTransaction,

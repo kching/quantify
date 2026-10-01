@@ -357,10 +357,10 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
   return <div className="app-shell" id="top">
     {portfoliosLoaded && <AppSidebar page="dashboard" hasPortfolio={portfolios.length > 0} user={user} navItems={[
       {id: 'overview', label: 'Overview', icon:'layout-dashboard', href:'/dashboard#overview'},
-      {id: 'portfolio', label: 'Portfolio Signals', icon:'activity', href:'/dashboard#portfolio'},
-      {id: 'performance', label: 'Portfolio Performance', icon:'bar-chart-3', href:'/dashboard#performance'},
-      {id: 'ledger', label: 'Trade & Cash Ledger', icon:'wallet', href:'/dashboard#ledger'},
-      {id: 'research', label: 'Strategy Research', icon:'microscope', href:'/research'}
+      {id: 'watchlist', label: 'Watchlist', icon:'list-checks', href:'/dashboard#watchlist'},
+      {id: 'portfolio', label: 'Portfolio', icon:'bar-chart-3', href:'/dashboard#portfolio'},
+      {id: 'ledger', label: 'Ledger', icon:'wallet', href:'/dashboard#ledger'},
+      {id: 'research', label: 'Strategies', icon:'flask-conical', href:'/research'}
     ]}/>}
 
     <main className="app-main">
@@ -388,12 +388,12 @@ export default function Dashboard({ user }: { user?: Pick<UserProfile, 'name' | 
           <Card className="metric-card"><CardContent className="metric-content"><div className="metric-icon amber"><Bell/></div><div className="metric-label">ACTIONABLE SIGNALS</div><strong>{scan?.signals.flatMap((row) => row.daily).filter((signal) => signal.signal !== 'HOLD').length ?? '—'}<span className="metric-unit"> today</span></strong><small>Klinger + RSI · daily candles</small></CardContent></Card>
         </section>
 
-        <section className="overview-grid" id="portfolio">
+        <section className="overview-grid" id="watchlist">
           <PortfolioSignals hasPortfolio={Boolean(currentPortfolio)} holdings={currentPortfolio?.holdings ?? []} signals={scan?.signals ?? []} warnings={scan?.warnings ?? []} error={signalError} onDismissError={() => setSignalError('')} lastScannedAt={lastScannedAt} busy={busy} onAddHolding={addHolding} onRemoveHolding={removeHolding} onRemoveSignal={removeSignal}/>
           <RecentMovements tickers={currentPortfolio?.holdings.slice(0, 4).map(({ symbol }) => symbol) ?? []} timeframe="1H · LAST 48 BARS" signals={scan?.signals ?? []}/>
         </section>
 
-        <section className="performance-section" id="performance">
+        <section className="performance-section" id="portfolio">
           <PortfolioPerformance performance={performance} range={performanceRange} onRangeChange={setPerformanceRange}/>
         </section>
 
