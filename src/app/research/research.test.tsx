@@ -53,7 +53,12 @@ describe('ResearchPage', () => {
     expect(await screen.findByText('Strategy return vs drawdown')).toBeDefined();
     expect(screen.getByText('Buy-and-hold return')).toBeDefined();
     expect(screen.getByText('Maximum return')).toBeDefined();
+    expect(screen.getAllByText('+12.5% (+4.5%)')).toHaveLength(2);
+    expect(screen.queryByRole('img', { name: 'Buy-and-hold return 8.0%' })).toBeNull();
+    expect(screen.queryByText('Strategy return')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Select run 1' }));
     expect(screen.getByRole('img', { name: 'Buy-and-hold return 8.0%' })).toBeDefined();
+    expect(screen.getByText('Strategy return')).toBeDefined();
     expect(screen.getByText('Lowest drawdown')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('cadence=hourly');

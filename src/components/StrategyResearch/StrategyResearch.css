@@ -59,12 +59,13 @@
 .chart-x-scale span { position: absolute; transform: translateX(-50%); }
 .buy-and-hold-line { position: absolute; right: 0; left: 0; z-index: 1; border-top: 2px dotted #8793a4; pointer-events: none; }
 .axis-label { position: absolute; color: #9aa4b3; font-size: 9px; font-weight: 750; letter-spacing: .65px; }
-.axis-y { top: 50%; left: -84px; transform: translateY(-50%) rotate(-90deg); transform-origin: center; }
+.axis-y { top: 50%; left: -34px; transform: translateY(-50%) rotate(-90deg); transform-origin: center; }
 .axis-x { right: auto; bottom: -51px; left: 50%; transform: translateX(-50%); }
 .scatter-point { position: absolute; z-index: 2; display: grid; width: 11px; height: 11px; place-items: center; margin: -5.5px 0 0 -5.5px; border: 0; border-radius: 50%; background: #5b86df; box-shadow: 0 2px 6px #4568a440; }
-.scatter-point.beating-buy-and-hold { background: #34a879; }
-.scatter-point.losing-buy-and-hold { background: #d87980; opacity: .7; }
+.scatter-point.profitable { background: #34a879; }
+.scatter-point.loss-making { background: #d87980; opacity: .7; }
 .scatter-point:hover, .scatter-point.selected { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; background: #249464; box-shadow: 0 0 0 3px #d8f1e6; }
+.scatter-point.selected { background: #2864dc; box-shadow: 0 0 0 3px #dce8ff; }
 .selected-run { display: grid; grid-template-columns: 1.5fr .7fr .8fr; gap: 12px; padding: 12px; border: 1px solid #e9edf3; border-radius: 8px; background: #fafbfd; }
 .selected-run div { display: grid; gap: 5px; }
 .selected-run strong { color: #2d3b51; font-size: 13px; font-variant-numeric: tabular-nums; }
