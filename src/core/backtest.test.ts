@@ -13,6 +13,7 @@ function strategyForSignals(signals: Readonly<Record<number, SignalType>>): Sign
   return {
     id: 'test-strategy',
     name: 'Test strategy',
+    inputParams: [],
     analyze(symbol: string, candles: readonly Candle[]): SignalResult {
       return {
         symbol, strategyId: this.id, strategyName: this.name,

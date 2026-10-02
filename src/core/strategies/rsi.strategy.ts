@@ -1,4 +1,4 @@
-import type { Candle, SignalResult, SignalStrategy, StrategyParamValue, StrategyParams } from '../types';
+import type { Candle, ParamDescriptior, SignalResult, SignalStrategy, StrategyParamValue, StrategyParams } from '../types';
 
 export type RsiParams = StrategyParams & {
   period?: number;
@@ -33,8 +33,11 @@ function calculateRsi(candles: readonly Candle[], periodLength = 14): number[] {
 }
 
 export class RsiStrategy implements SignalStrategy {
-  readonly id = 'rsi-14';
-  readonly name = 'RSI (14)';
+  readonly id = 'rsi';
+  readonly name = 'RSI';
+  get inputParams(): ParamDescriptior[] {
+    return [{ type: 'number', id: 'period', label: 'RSI period', defaultValues: { min: 5, max: 30, step: 1 } }];
+  }
 
   analyze(symbol: string, candles: readonly Candle[], params: StrategyParams = {}): SignalResult {
     const { period: periodParam } = params as RsiParams;

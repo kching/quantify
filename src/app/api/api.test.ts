@@ -95,7 +95,16 @@ mock.module('@/core/market', () => ({ scanPortfolio }));
 mock.module('@/core/performance.service', () => ({ capturePortfolioPerformance }));
 mock.module('@/core/backtest', () => ({ runBacktest }));
 mock.module('@/core/engine', () => ({
-  strategies: [{ id: 'klinger-oscillator', name: 'Klinger', analyze: () => ({}) }],
+  strategies: [{
+    id: 'klinger-oscillator',
+    name: 'Klinger',
+    inputParams: [
+      { type: 'number', id: 'fastPeriod', label: 'Fast period', defaultValues: { min: 10, max: 60, step: 1 } },
+      { type: 'number', id: 'slowPeriod', label: 'Slow period', defaultValues: { min: 30, max: 100, step: 1 } },
+      { type: 'number', id: 'signalPeriod', label: 'Signal period', defaultValues: { min: 5, max: 30, step: 1 } },
+    ],
+    analyze: () => ({}),
+  }],
 }));
 mock.module('@/core/providers/yahoo.provider', () => ({ fetchYahooCandles }));
 
@@ -234,9 +243,9 @@ describe('API route handlers', () => {
 
     it('validates a trade and preserves non-ASX tickers', async () => {
       expect((await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'MQG', side: 'BUY', quantity: 0, price: 100, brokerage: 5, timestamp: 1 }), context('1'))).status).toBe(400);
-      const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'qqq', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }), context('1'));
+      const response = await tradesRoute.POST(request('/api/portfolios/1/trades', 'POST', { symbol: 'qqq', side: 'BUY', quantity: 10, price: 100, brokerage: 7.25, timestamp: 1 }), context('1'));
       expect(response.status).toBe(201);
-      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'QQQ', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: 1 }, 'admin');
+      expect(recordTrade).toHaveBeenCalledWith({ portfolioId: 1, symbol: 'QQQ', side: 'BUY', quantity: 10, price: 100, brokerage: 7.25, timestamp: 1 }, 'admin');
     });
 
     it('returns an error when the ledger rejects a sell', async () => {

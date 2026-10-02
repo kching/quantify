@@ -3,7 +3,7 @@ import { runBacktest } from '@/core/backtest';
 import { strategies } from '@/core/engine';
 import { fetchYahooCandles } from '@/core/providers/yahoo.provider';
 import type { CandleInterval } from '@/core/types';
-import type { BacktestResult, StrategyParams } from '@/core/types';
+import type { BacktestResult, SignalStrategy, StrategyParams } from '@/core/types';
 import { getCurrentUser } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
@@ -30,21 +30,23 @@ function parameterValues([min, max, step]: ParameterTuple): number[] {
   return Array.from(new Set([...values, max]));
 }
 
-function sweepParameterSets(strategyId: string, query: URLSearchParams): StrategyParams[] | null {
-  if (strategyId === 'rsi-14') {
-    const period = parseParameterTuple(query.get('period'));
-    return period ? parameterValues(period).map((value) => ({ period: value })) : null;
-  }
-  const fastPeriod = parseParameterTuple(query.get('fastPeriod'));
-  const slowPeriod = parseParameterTuple(query.get('slowPeriod'));
-  const signalPeriod = parseParameterTuple(query.get('signalPeriod'));
-  if (!fastPeriod || !slowPeriod || !signalPeriod) return null;
-  const fastValues = parameterValues(fastPeriod);
-  const slowValues = parameterValues(slowPeriod);
-  const signalValues = parameterValues(signalPeriod);
-  const runCount = fastValues.length * slowValues.length * signalValues.length;
+function sweepParameterSets(strategy: SignalStrategy, query: URLSearchParams): StrategyParams[] | null {
+  const descriptors = strategy.inputParams.filter((descriptor) => descriptor.type === 'number');
+  const requested = descriptors.map((descriptor) => ({
+    id: descriptor.id,
+    tuple: parseParameterTuple(query.get(descriptor.id)),
+    wasRequested: query.has(descriptor.id),
+  }));
+  if (!requested.some(({ wasRequested }) => wasRequested)) return null;
+  if (requested.some(({ tuple }) => tuple === null)) return null;
+
+  const valuesByParameter = requested.map(({ id, tuple }) => [id, parameterValues(tuple as ParameterTuple)] as const);
+  const runCount = valuesByParameter.reduce((count, [, values]) => count * values.length, 1);
   if (runCount > MAX_SWEEP_RUNS) throw new Error(`Sweep is limited to ${MAX_SWEEP_RUNS.toLocaleString()} runs.`);
-  return fastValues.flatMap((fastPeriodValue) => slowValues.flatMap((slowPeriodValue) => signalValues.map((signalPeriodValue) => ({ fastPeriod: fastPeriodValue, slowPeriod: slowPeriodValue, signalPeriod: signalPeriodValue }))));
+  return valuesByParameter.reduce<StrategyParams[]>(
+    (sets, [id, values]) => sets.flatMap((params) => values.map((value) => ({ ...params, [id]: value }))),
+    [{}],
+  );
 }
 
 export async function GET(request: Request): Promise<Response> {
@@ -58,10 +60,11 @@ export async function GET(request: Request): Promise<Response> {
   const interval: CandleInterval = cadence === 'hourly' ? '1h' : '1d';
   let params: StrategyParams = {};
   let parameterSets: StrategyParams[] | null = null;
-  const hasSweep = strategyId === 'rsi-14' ? query.has('period') : query.has('fastPeriod') || query.has('slowPeriod') || query.has('signalPeriod');
+  const numericParameterIds = strategy.inputParams.filter((descriptor) => descriptor.type === 'number').map(({ id }) => id);
+  const hasSweep = numericParameterIds.some((id) => query.has(id));
   if (hasSweep) {
     try {
-      parameterSets = sweepParameterSets(strategyId, query);
+      parameterSets = sweepParameterSets(strategy, query);
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : 'Sweep parameters are invalid.' }, { status: 422 });
     }

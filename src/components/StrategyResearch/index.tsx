@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { ArrowLeft, LoaderCircle, Save, Trash2 } from 'lucide-react';
-import type { BacktestResult, HoldingStrategy, Portfolio, StrategyParams } from '@/core/types';
+import { strategies } from '@/core/engine';
+import type { BacktestResult, HoldingStrategy, ParamDescriptor, Portfolio, SignalStrategy, StrategyParams } from '@/core/types';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,11 +14,11 @@ import './StrategyResearch.css';
 
 type Cadence = 'hourly' | 'daily';
 interface ParameterRange { min: number; max: number; step: number; }
-interface StrategyRanges { period: ParameterRange; fastPeriod: ParameterRange; slowPeriod: ParameterRange; signalPeriod: ParameterRange; }
+interface StrategyRanges { [name: string]: ParameterRange; }
 type ParameterField = keyof ParameterRange;
-type RangeName = keyof StrategyRanges;
-type RangeInputs = { [name in RangeName]: { [field in ParameterField]: string } };
-type TouchedFields = { [name in RangeName]: { [field in ParameterField]: boolean } };
+type RangeName = string;
+type RangeInputs = Record<RangeName, Record<ParameterField, string>>;
+type TouchedFields = Record<RangeName, Record<ParameterField, boolean>>;
 export interface StrategyResearchInput { symbol: string; strategy: string; cadence: Cadence; days: number; ranges: StrategyRanges; }
 export interface StrategySweepResult extends StrategyResearchInput { runs: BacktestResult[]; }
 interface StrategyResearchProps {
@@ -36,12 +37,17 @@ const rangeOptions: Record<Cadence, Array<{ label: string; shortLabel: string; d
   hourly: [{ label: 'Last month', shortLabel: '1M', days: 30 }, { label: 'Last 3 months', shortLabel: '3M', days: 90 }, { label: 'Last 6 months', shortLabel: '6M', days: 182 }, { label: 'Last 1 year', shortLabel: '12M', days: 365 }],
   daily: [{ label: 'Last year', shortLabel: '1Y', days: 365 }, { label: 'Last 3 years', shortLabel: '3Y', days: 1095 }, { label: 'Last 5 years', shortLabel: '5Y', days: 1825 }, { label: 'Last 10 years', shortLabel: '10Y', days: 3650 }],
 };
-const initialRanges: StrategyRanges = { period: { min: 5, max: 30, step: 1 }, fastPeriod: { min: 10, max: 60, step: 1 }, slowPeriod: { min: 30, max: 100, step: 1 }, signalPeriod: { min: 5, max: 30, step: 1 } };
+function strategyFor(id: string): SignalStrategy { return strategies.find((candidate) => candidate.id === id) ?? strategies[0]!; }
+function numericDescriptors(id: string): ParamDescriptor[] { return strategyFor(id).inputParams.filter((descriptor) => descriptor.type === 'number'); }
+function descriptorsToRanges(descriptors: readonly ParamDescriptor[]): StrategyRanges {
+  return Object.fromEntries(descriptors.map(({ id, defaultValues }) => [id, { min: Number(defaultValues.min), max: Number(defaultValues.max), step: Number(defaultValues.step ?? 1) }])) as StrategyRanges;
+}
+const initialRanges = descriptorsToRanges(numericDescriptors('klinger-oscillator'));
 function rangesToInputs(source: StrategyRanges): RangeInputs {
   return Object.fromEntries(Object.entries(source).map(([name, range]) => [name, { min: String(range.min), max: String(range.max), step: String(range.step) }])) as RangeInputs;
 }
-function emptyTouchedFields(): TouchedFields {
-  return Object.fromEntries(Object.keys(initialRanges).map((name) => [name, { min: false, max: false, step: false }])) as TouchedFields;
+function emptyTouchedFields(source: StrategyRanges = initialRanges): TouchedFields {
+  return Object.fromEntries(Object.keys(source).map((name) => [name, { min: false, max: false, step: false }])) as TouchedFields;
 }
 function parseInteger(value: string): number | null {
   if (!value.trim()) return null;
@@ -51,12 +57,11 @@ function parseInteger(value: string): number | null {
 
 function parameterSets(sweep: StrategySweepResult): StrategyParams[] {
   const values = (min: number, max: number, step: number): number[] => {
+    if (step === 0) return Array.from(new Set([min, max]));
     const stepped = Array.from({ length: Math.floor((max - min) / step) + 1 }, (_, index) => min + index * step);
     return Array.from(new Set([...stepped, max]));
   };
-  return sweep.strategy === 'rsi-14'
-    ? values(sweep.ranges.period.min, sweep.ranges.period.max, sweep.ranges.period.step).map((period) => ({ period }))
-    : values(sweep.ranges.fastPeriod.min, sweep.ranges.fastPeriod.max, sweep.ranges.fastPeriod.step).flatMap((fastPeriod) => values(sweep.ranges.slowPeriod.min, sweep.ranges.slowPeriod.max, sweep.ranges.slowPeriod.step).flatMap((slowPeriod) => values(sweep.ranges.signalPeriod.min, sweep.ranges.signalPeriod.max, sweep.ranges.signalPeriod.step).map((signalPeriod) => ({ fastPeriod, slowPeriod, signalPeriod }))));
+  return Object.entries(sweep.ranges).reduce<StrategyParams[]>((sets, [id, range]) => sets.flatMap((params) => values(range.min, range.max, range.step).map((value) => ({ ...params, [id]: value }))), [{}]);
 }
 function paramsLabel(params: StrategyParams): string { return Object.entries(params).map(([key, value]) => `${key.replace('Period', '')} ${String(value)}`).join(' · '); }
 interface ChartScale { min: number; max: number; ticks: number[]; }
@@ -84,6 +89,7 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
   const [portfolioId, setPortfolioId] = useState(String(portfolios[0]?.id ?? ''));
   const [saving, setSaving] = useState(false);
   const toast = useToast();
+  const parameterDescriptors = numericDescriptors(strategy);
   const selectedPortfolio = portfolios.find((portfolio) => String(portfolio.id) === portfolioId);
   const portfolioHoldings = selectedPortfolio?.holdings ?? [];
   const selectedRun = result && selectedIndex !== null ? result.runs[selectedIndex] : undefined;
@@ -101,8 +107,8 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
   function showToast(message: string, kind: 'success' | 'error'): void { toast(message, kind); }
 
   function changeStrategy(next: string): void {
-    const nextRanges = next === 'rsi-14' ? { ...initialRanges, period: { min: 5, max: 30, step: 1 } } : initialRanges;
-    setStrategy(next); setRangeInputs(rangesToInputs(nextRanges)); setTouchedFields(emptyTouchedFields());
+    const nextRanges = descriptorsToRanges(numericDescriptors(next));
+    setStrategy(next); setRangeInputs(rangesToInputs(nextRanges)); setTouchedFields(emptyTouchedFields(nextRanges));
   }
   function changeCadence(next: Cadence): void { setCadence(next); setDays(rangeOptions[next][next === 'hourly' ? 1 : 2].days); }
   function updateRangeInput(name: RangeName, field: ParameterField, value: string): void {
@@ -119,7 +125,7 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
     return errors;
   }
   function rangeIsValid(name: RangeName): boolean { return validateRange(name).length === 0; }
-  const visibleRangeNames: RangeName[] = strategy === 'rsi-14' ? ['period'] : ['fastPeriod', 'slowPeriod', 'signalPeriod'];
+  const visibleRangeNames: RangeName[] = parameterDescriptors.map(({ id }) => id);
   const allRangesValid = visibleRangeNames.every(rangeIsValid);
   function markTouched(name: RangeName, field: ParameterField): void { setTouchedFields((current) => ({ ...current, [name]: { ...current[name], [field]: true } })); }
   function errorFor(name: RangeName, field: ParameterField): string | undefined {
@@ -135,8 +141,11 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
     return undefined;
   }
   function currentRanges(): StrategyRanges {
-    const range = (name: RangeName): ParameterRange => ({ min: parseInteger(rangeInputs[name].min) ?? 0, max: parseInteger(rangeInputs[name].max) ?? 0, step: parseInteger(rangeInputs[name].step) ?? 0 });
-    return { period: range('period'), fastPeriod: range('fastPeriod'), slowPeriod: range('slowPeriod'), signalPeriod: range('signalPeriod') };
+    return Object.fromEntries(visibleRangeNames.map((name) => [name, {
+      min: parseInteger(rangeInputs[name].min) ?? 0,
+      max: parseInteger(rangeInputs[name].max) ?? 0,
+      step: parseInteger(rangeInputs[name].step) ?? 0,
+    }])) as StrategyRanges;
   }
   async function submitBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> { event.preventDefault(); if (!allRangesValid) return; setSelectedIndex(null); setSignalLabel(null); await onRun({ symbol, strategy, cadence, days, ranges: currentRanges() }); }
   function selectRun(index: number): void { setSelectedIndex(index); setSignalLabel(null); }
@@ -160,7 +169,7 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
       <div className="setup-columns"><div className="setup-controls"><div className="setup-grid"><label>Symbol<Input aria-label="Ticker for backtest" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())}/></label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label></div>
         <div className="field-block"><span className="field-label">Candle cadence</span><ButtonGroup className="cadence-button-group">{(['hourly', 'daily'] as const).map((option) => <button className={cadence === option ? 'choice-button selected' : 'choice-button'} type="button" aria-pressed={cadence === option} key={option} onClick={() => changeCadence(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}</ButtonGroup></div>
         <div className="field-block"><div className="slider-heading"><span className="field-label">Backtest window</span><strong>{rangeOptions[cadence].find((option) => option.days === days)?.label}</strong></div><input className="range-slider" aria-label="Backtest window" type="range" min="0" max={rangeOptions[cadence].length - 1} step="1" value={Math.max(0, rangeOptions[cadence].findIndex((option) => option.days === days))} onChange={(event) => setDays(rangeOptions[cadence][Number(event.target.value)]?.days ?? days)}/><div className="slider-labels">{rangeOptions[cadence].map((option) => <span key={option.days}>{option.shortLabel}</span>)}</div></div>
-      </div><div className="parameter-panel"><div><span className="field-label">Parameter ranges</span><p>Set the minimum and maximum values to test.</p></div><div className="parameter-range-grid">{(strategy === 'rsi-14' ? [['period', 'RSI period']] : [['fastPeriod', 'Fast period'], ['slowPeriod', 'Slow period'], ['signalPeriod', 'Signal period']]).map(([name, label]) => { const rangeName = name as RangeName; const input = rangeInputs[rangeName]; const rangeError = validateRange(rangeName)[0]; return <div className="parameter-range" key={name}><span className="field-label">{label}</span>{(['min', 'max', 'step'] as const).map((field) => { const error = errorFor(rangeName, field); return <label key={field}>{field === 'min' ? 'Min' : field === 'max' ? 'Max' : 'Step'}<Input aria-label={`${label} ${field === 'min' ? 'minimum' : field === 'max' ? 'maximum' : 'step'}`} type="number" min={field === 'step' ? '0' : '1'} step="1" value={input[field]} aria-invalid={Boolean(error)} onChange={(event) => updateRangeInput(rangeName, field, event.target.value)} onBlur={() => markTouched(rangeName, field)}/></label>; })}{rangeError && <span className="field-error parameter-range-error" role="alert">{rangeError}</span>}</div>; })}</div></div>
+      </div><div className="parameter-panel"><div><span className="field-label">Parameter ranges</span><p>Set the minimum and maximum values to test.</p></div><div className="parameter-range-grid">{parameterDescriptors.map(({ id: name, label }) => { const rangeName = name as RangeName; const input = rangeInputs[rangeName]; const rangeError = validateRange(rangeName)[0]; return <div className="parameter-range" key={name}><span className="field-label">{label}</span>{(['min', 'max', 'step'] as const).map((field) => { const error = errorFor(rangeName, field); return <label key={field}>{field === 'min' ? 'Min' : field === 'max' ? 'Max' : 'Step'}<Input aria-label={`${label} ${field === 'min' ? 'minimum' : field === 'max' ? 'maximum' : 'step'}`} type="number" min={field === 'step' ? '0' : '1'} step="1" value={input[field]} aria-invalid={Boolean(error)} onChange={(event) => updateRangeInput(rangeName, field, event.target.value)} onBlur={() => markTouched(rangeName, field)}/></label>; })}{rangeError && <span className="field-error parameter-range-error" role="alert">{rangeError}</span>}</div>; })}</div></div>
       </div>
       <div className="setup-actions"><Button type="submit" disabled={busy || !allRangesValid}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : null}{busy ? 'Running sweep…' : 'Run parameter sweep'}</Button></div>
     </form>

@@ -1,5 +1,4 @@
 import { listPortfolios, listTradePage, recordTrade } from '@/core/db';
-import { calculateBrokerage } from '@/core/brokerage';
 import { publishMarketUpdate } from '@/core/market-update-events';
 import type { TradeSide } from '@/core/types';
 import { getCurrentUser } from '@/lib/current-user';
@@ -32,15 +31,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const side = body.side;
   const quantity = Number(body.quantity);
   const price = Number(body.price);
+  const brokerage = Number(body.brokerage);
   const timestamp = Number(body.timestamp);
   if (!Number.isSafeInteger(portfolioId) || portfolioId < 1 || !/^[A-Z0-9.^-]{1,20}$/.test(symbol)
     || (side !== 'BUY' && side !== 'SELL') || !Number.isFinite(quantity) || quantity <= 0
     || !Number.isFinite(price) || price <= 0
+    || !Number.isFinite(brokerage) || brokerage < 0
     || !Number.isSafeInteger(timestamp) || timestamp < 1) {
     return Response.json({ error: 'Enter a valid ticker, side, units, price and trade time.' }, { status: 400 });
   }
   try {
-    const input = { portfolioId, symbol, side: side as TradeSide, quantity, price, brokerage: calculateBrokerage(quantity * price), timestamp };
+    const input = { portfolioId, symbol, side: side as TradeSide, quantity, price, brokerage, timestamp };
     const trade = await recordTrade(input, user.id);
     try {
       const { refreshPortfolioSymbol } = await import('@/core/market');

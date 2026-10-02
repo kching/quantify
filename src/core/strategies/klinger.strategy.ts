@@ -1,4 +1,4 @@
-import type { Candle, SignalResult, SignalStrategy, StrategyParamValue, StrategyParams } from '../types';
+import type { Candle, ParamDescriptior, SignalResult, SignalStrategy, StrategyParamValue, StrategyParams } from '../types';
 
 export type KlingerParams = StrategyParams & {
   fastPeriod?: number;
@@ -21,6 +21,13 @@ function ema(values: readonly number[], period: number): number[] {
 export class KlingerStrategy implements SignalStrategy {
   readonly id = 'klinger-oscillator';
   readonly name = 'Klinger Volume Oscillator';
+  get inputParams(): ParamDescriptior[] {
+    return [
+      { type: 'number', id: 'fastPeriod', label: 'Fast period', defaultValues: { min: 5, max: 40, step: 2 } },
+      { type: 'number', id: 'slowPeriod', label: 'Slow period', defaultValues: { min: 15, max: 100, step: 5 } },
+      { type: 'number', id: 'signalPeriod', label: 'Signal period', defaultValues: { min: 3, max: 21, step: 1 } },
+    ];
+  }
 
   analyze(symbol: string, candles: readonly Candle[], params: StrategyParams = {}): SignalResult {
     const { fastPeriod, slowPeriod, signalPeriod } = params as KlingerParams;

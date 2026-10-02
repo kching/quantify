@@ -6,9 +6,7 @@ export const strategies: readonly SignalStrategy[] = [new KlingerStrategy(), new
 
 const strategyLoaders: Record<string, () => Promise<SignalStrategy>> = {
   'klinger-oscillator': async () => new (await import('./strategies/klinger.strategy')).KlingerStrategy(),
-  'klinger volume oscillator': async () => new (await import('./strategies/klinger.strategy')).KlingerStrategy(),
-  'rsi-14': async () => new (await import('./strategies/rsi.strategy')).RsiStrategy(),
-  'rsi (14)': async () => new (await import('./strategies/rsi.strategy')).RsiStrategy(),
+  'rsi-14': async () => new (await import('./strategies/rsi.strategy')).RsiStrategy()
 };
 
 export async function loadStrategy(name: string): Promise<SignalStrategy | null> {

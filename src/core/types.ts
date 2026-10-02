@@ -3,6 +3,22 @@ export type CandleInterval = '1h' | '1d';
 export type TradeSide = 'BUY' | 'SELL';
 export type StrategyParamValue = number | number[] | boolean | boolean[];
 export type StrategyParams = Record<string, StrategyParamValue>;
+export type ParamDescriptorType = 'number' | 'number[]' | 'boolean' | 'boolean[]';
+
+export interface ParamDefaultValues {
+  min: StrategyParamValue;
+  max: StrategyParamValue;
+  step?: StrategyParamValue;
+}
+
+export interface ParamDescriptior {
+  type: ParamDescriptorType;
+  id: string;
+  label: string;
+  defaultValues: ParamDefaultValues;
+}
+
+export type ParamDescriptor = ParamDescriptior;
 
 export interface Candle {
   symbol: string;
@@ -30,9 +46,10 @@ export interface SignalResult {
 }
 
 export interface SignalStrategy {
-  id: string;
-  name: string;
   analyze(symbol: string, candles: readonly Candle[], params?: StrategyParams): SignalResult;
+  get inputParams(): ParamDescriptior[];
+  get id(): string;
+  get name(): string;
 }
 
 export interface Portfolio {
