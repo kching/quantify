@@ -73,6 +73,20 @@ describe('ResearchPage', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Not enough hourly candles.');
   });
 
+  it('validates the symbol field when it loses focus', () => {
+    render(<ResearchPage/>);
+    const symbol = screen.getByRole('textbox', { name: 'Ticker for backtest' });
+    fireEvent.change(symbol, { target: { value: '' } });
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText('Symbol is required.')).toBeNull();
+    fireEvent.blur(symbol);
+    expect(screen.getByText('Symbol is required.')).toBeDefined();
+    expect(symbol.getAttribute('aria-invalid')).toBe('true');
+    fireEvent.change(symbol, { target: { value: 'QQQ' } });
+    expect(screen.queryByText('Symbol is required.')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('uses each parameter step when generating the sweep', async () => {
     render(<ResearchPage/>);
 
@@ -100,7 +114,7 @@ describe('ResearchPage', () => {
     expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('requires a non-negative step', () => {
+  it('requires a non-negative step', async () => {
     render(<ResearchPage/>);
     const step = screen.getByRole('spinbutton', { name: 'Fast period step' });
     fireEvent.change(step, { target: { value: '-1' } });

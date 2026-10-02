@@ -79,6 +79,7 @@ function strategyReturnComparison(run: BacktestResult, buyAndHoldReturn: number)
 
 export default function StrategyResearch({ result, busy, portfolios = [], savedStrategies = [], onRun, onBack, onSaved = () => undefined, onDeleted = () => undefined }: StrategyResearchProps): React.JSX.Element {
   const [symbol, setSymbol] = useState('MQG.AX');
+  const [symbolTouched, setSymbolTouched] = useState(false);
   const [strategy, setStrategy] = useState('klinger-oscillator');
   const [cadence, setCadence] = useState<Cadence>('hourly');
   const [days, setDays] = useState(90);
@@ -90,6 +91,8 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const parameterDescriptors = numericDescriptors(strategy);
+  const symbolIsValid = symbol.trim().length > 0;
+  const symbolError = symbolTouched && !symbolIsValid ? 'Symbol is required.' : undefined;
   const selectedPortfolio = portfolios.find((portfolio) => String(portfolio.id) === portfolioId);
   const portfolioHoldings = selectedPortfolio?.holdings ?? [];
   const selectedRun = result && selectedIndex !== null ? result.runs[selectedIndex] : undefined;
@@ -147,7 +150,7 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
       step: parseInteger(rangeInputs[name].step) ?? 0,
     }])) as StrategyRanges;
   }
-  async function submitBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> { event.preventDefault(); if (!allRangesValid) return; setSelectedIndex(null); setSignalLabel(null); await onRun({ symbol, strategy, cadence, days, ranges: currentRanges() }); }
+  async function submitBacktest(event: React.FormEvent<HTMLFormElement>): Promise<void> { event.preventDefault(); if (!symbolIsValid || !allRangesValid) return; setSelectedIndex(null); setSignalLabel(null); await onRun({ symbol, strategy, cadence, days, ranges: currentRanges() }); }
   function selectRun(index: number): void { setSelectedIndex(index); setSignalLabel(null); }
   async function saveSignal(): Promise<void> {
     if (!selectedRun || !portfolioId || !normalizedSignalLabel) {
@@ -166,12 +169,12 @@ export default function StrategyResearch({ result, busy, portfolios = [], savedS
 
   if (!result) return <Card className="backtest-panel research-setup-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">SIGNAL BUILDER</p><CardTitle>Configure your backtest</CardTitle><CardDescription>Choose a strategy, cadence, time window, and parameter ranges to sweep.</CardDescription></div></CardHeader><CardContent>
     <form className="research-setup-form" onSubmit={(event) => void submitBacktest(event)}>
-      <div className="setup-columns"><div className="setup-controls"><div className="setup-grid"><label>Symbol<Input aria-label="Ticker for backtest" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())}/></label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label></div>
+      <div className="setup-columns"><div className="setup-controls"><div className="setup-grid"><label>Symbol<Input aria-label="Ticker for backtest" placeholder="e.g. QQQ" value={symbol} aria-invalid={Boolean(symbolError)} aria-describedby={symbolError ? 'symbol-error' : undefined} onChange={(event) => setSymbol(event.target.value.toUpperCase())} onBlur={() => setSymbolTouched(true)}/>{symbolError && <span id="symbol-error" className="field-error" role="alert">{symbolError}</span>}</label><label>Strategy<SelectControl value={strategy} ariaLabel="Backtest strategy" onValueChange={changeStrategy}><SelectOption value="klinger-oscillator">Klinger Volume Oscillator</SelectOption><SelectOption value="rsi-14">RSI (14)</SelectOption></SelectControl></label></div>
         <div className="field-block"><span className="field-label">Candle cadence</span><ButtonGroup className="cadence-button-group">{(['hourly', 'daily'] as const).map((option) => <button className={cadence === option ? 'choice-button selected' : 'choice-button'} type="button" aria-pressed={cadence === option} key={option} onClick={() => changeCadence(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}</ButtonGroup></div>
         <div className="field-block"><div className="slider-heading"><span className="field-label">Backtest window</span><strong>{rangeOptions[cadence].find((option) => option.days === days)?.label}</strong></div><input className="range-slider" aria-label="Backtest window" type="range" min="0" max={rangeOptions[cadence].length - 1} step="1" value={Math.max(0, rangeOptions[cadence].findIndex((option) => option.days === days))} onChange={(event) => setDays(rangeOptions[cadence][Number(event.target.value)]?.days ?? days)}/><div className="slider-labels">{rangeOptions[cadence].map((option) => <span key={option.days}>{option.shortLabel}</span>)}</div></div>
       </div><div className="parameter-panel"><div><span className="field-label">Parameter ranges</span><p>Set the minimum and maximum values to test.</p></div><div className="parameter-range-grid">{parameterDescriptors.map(({ id: name, label }) => { const rangeName = name as RangeName; const input = rangeInputs[rangeName]; const rangeError = validateRange(rangeName)[0]; return <div className="parameter-range" key={name}><span className="field-label">{label}</span>{(['min', 'max', 'step'] as const).map((field) => { const error = errorFor(rangeName, field); return <label key={field}>{field === 'min' ? 'Min' : field === 'max' ? 'Max' : 'Step'}<Input aria-label={`${label} ${field === 'min' ? 'minimum' : field === 'max' ? 'maximum' : 'step'}`} type="number" min={field === 'step' ? '0' : '1'} step="1" value={input[field]} aria-invalid={Boolean(error)} onChange={(event) => updateRangeInput(rangeName, field, event.target.value)} onBlur={() => markTouched(rangeName, field)}/></label>; })}{rangeError && <span className="field-error parameter-range-error" role="alert">{rangeError}</span>}</div>; })}</div></div>
       </div>
-      <div className="setup-actions"><Button type="submit" disabled={busy || !allRangesValid}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : null}{busy ? 'Running sweep…' : 'Run parameter sweep'}</Button></div>
+      <div className="setup-actions"><Button type="submit" disabled={busy || !symbolIsValid || !allRangesValid}>{busy ? <LoaderCircle className="size-4 animate-spin"/> : null}{busy ? 'Running sweep…' : 'Run parameter sweep'}</Button></div>
     </form>
   </CardContent></Card>;
 
