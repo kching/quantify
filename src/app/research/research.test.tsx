@@ -54,7 +54,7 @@ describe('ResearchPage', () => {
     expect(screen.getByText('Buy-and-hold return')).toBeDefined();
     expect(screen.getByText('Maximum return')).toBeDefined();
     expect(screen.getAllByText('+12.5% (+4.5%)')).toHaveLength(2);
-    expect(screen.queryByRole('img', { name: 'Buy-and-hold return 8.0%' })).toBeNull();
+    expect(screen.getByRole('img', { name: 'Buy-and-hold return 8.0%' })).toBeDefined();
     expect(screen.queryByText('Strategy return')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Select run 1' }));
     expect(screen.getByRole('img', { name: 'Buy-and-hold return 8.0%' })).toBeDefined();
