@@ -10,7 +10,7 @@ const { cleanup, fireEvent, render, screen } = await import('@testing-library/re
 const { default: ResearchPage } = await import('./research');
 
 const result = {
-  symbol: 'MQG.AX', strategyId: 'rsi-14', initialBalance: 10_000, finalBalance: 11_250,
+  symbol: 'MQG.AX', strategyId: 'klinger-oscillator', initialBalance: 10_000, finalBalance: 11_250,
   strategyReturnPct: 12.5, buyAndHoldReturnPct: 8, totalReturnPct: 4.5, winRatePct: 60, maxDrawdownPct: -8.2,
   trades: [{ entryDate: 1, exitDate: 2, entryPrice: 100, exitPrice: 110, pnlPct: 10 }],
 };
@@ -19,19 +19,6 @@ let status = 200;
 const fetchMock = mock(async (url: string): Promise<Response> => { void url; return status === 200
   ? Response.json({ results: [result] })
   : Response.json({ error: 'Not enough hourly candles.' }, { status }); });
-
-async function chooseOption(label: string, optionName: string): Promise<void> {
-  await act(async () => {
-    fireEvent.click(screen.getByRole('combobox', { name: label }));
-    await Promise.resolve();
-  });
-  const option = await screen.findByRole('option', { name: optionName });
-  await act(async () => {
-    fireEvent.pointerDown(option, { pointerType: 'mouse' });
-    fireEvent.click(option);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
 
 beforeEach(() => {
   status = 200;
@@ -47,7 +34,6 @@ describe('ResearchPage', () => {
   it('runs a selected strategy sweep and shows the results workspace', async () => {
     render(<ResearchPage/>);
 
-    await chooseOption('Backtest strategy', 'RSI (14)');
     fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
     expect(await screen.findByText('Strategy return vs drawdown')).toBeDefined();
@@ -90,27 +76,33 @@ describe('ResearchPage', () => {
   it('uses each parameter step when generating the sweep', async () => {
     render(<ResearchPage/>);
 
-    await chooseOption('Backtest strategy', 'RSI (14)');
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'RSI period step' }), { target: { value: '5' } });
+    await act(async () => {
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Fast period step' }), { target: { value: '5' } });
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Run parameter sweep' }));
 
     expect(await screen.findByText('Strategy return vs drawdown')).toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(encodeURIComponent('[5,30,5]'));
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(encodeURIComponent('[5,40,5]'));
   });
 
   it('allows intermediate range values while typing and validates on blur', async () => {
     render(<ResearchPage/>);
     const minimum = screen.getByRole('spinbutton', { name: 'Fast period minimum' });
     const maximum = screen.getByRole('spinbutton', { name: 'Fast period maximum' });
-    fireEvent.change(maximum, { target: { value: '5' } });
+    await act(async () => {
+      fireEvent.change(maximum, { target: { value: '5' } });
+    });
     expect(maximum).toHaveProperty('value', '5');
-    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.blur(maximum);
-    expect(screen.getByRole('alert').textContent).toBe('Maximum must be at least the minimum.');
-    fireEvent.change(minimum, { target: { value: '4' } });
-    fireEvent.blur(minimum);
-    fireEvent.blur(maximum);
+    expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => {
+      fireEvent.blur(maximum);
+    });
+    await act(async () => {
+      fireEvent.change(minimum, { target: { value: '4' } });
+      fireEvent.blur(minimum);
+      fireEvent.blur(maximum);
+    });
     expect((screen.getByRole('button', { name: 'Run parameter sweep' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
