@@ -2,16 +2,21 @@ import 'server-only';
 import { createClient } from '@libsql/client';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { foreignKey, index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import type { Candle, CandleInterval, HoldingPerformancePoint, HoldingStrategy, HoldingStrategyInput, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, SignalType, StrategyParams, UserProfile } from './types';
+import type { Candle, CandleInterval, HoldingPerformancePoint, HoldingStrategy, HoldingStrategyInput, PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioPerformancePoint, PortfolioTrade, SignalType, StrategyParams, UserPreferences, UserProfile } from './types';
 
 const users = sqliteTable('users', {
   id: text('id').primaryKey(), name: text('name').notNull(), email: text('email'), image: text('image'),
   googleSubject: text('google_subject'), isAnonymous: integer('is_anonymous', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at').notNull().default(0), updatedAt: integer('updated_at').notNull().default(0),
 }, (table) => [uniqueIndex('users_google_subject').on(table.googleSubject)]);
+const userPreferences = sqliteTable('user_preferences', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  preferences: text('preferences').notNull().default('{}'),
+  updatedAt: integer('updated_at').notNull(),
+});
 const portfolios = sqliteTable('portfolios', {
   id: integer('id').primaryKey({ autoIncrement: true }), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(), createdAt: integer('created_at').notNull(),
@@ -23,6 +28,7 @@ const holdings = sqliteTable('holdings', {
 const holdingStrategies = sqliteTable('holding_strategies', {
   id: integer('id').primaryKey({ autoIncrement: true }), portfolioId: integer('portfolio_id').notNull(),
   symbol: text('symbol').notNull(), label: text('label').notNull(), name: text('name').notNull(), params: text('params').notNull(),
+  candleType: text('candle_type').notNull().default('1d'),
   lastSignal: text('last_signal'), signalUpdatedAt: integer('signal_updated_at'),
 }, (table) => [
   foreignKey({ columns: [table.portfolioId, table.symbol], foreignColumns: [holdings.portfolioId, holdings.symbol], name: 'holding_strategies_holding_fk' }),
@@ -63,7 +69,7 @@ export const DAILY_CANDLE_HISTORY_DAYS = 10 * 365;
 const dbPath = process.env.QUANTIFY_DB_PATH ?? join(process.cwd(), 'data', 'quantify.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
 const client = createClient({ url: `file:${dbPath}` });
-export const db = drizzle({ client, schema: { users, portfolios, holdings, holdingStrategies, candles, alerts, trades, cashTransactions, holdingPerformance, portfolioPerformance } });
+export const db = drizzle({ client, schema: { users, userPreferences, portfolios, holdings, holdingStrategies, candles, alerts, trades, cashTransactions, holdingPerformance, portfolioPerformance } });
 
 async function initializeDatabase(): Promise<void> {
   await client.executeMultiple(`
@@ -71,9 +77,10 @@ async function initializeDatabase(): Promise<void> {
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, google_subject TEXT UNIQUE, is_anonymous INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS user_preferences (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, preferences TEXT NOT NULL DEFAULT '{}', updated_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
-    CREATE TABLE IF NOT EXISTS holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE);
+    CREATE TABLE IF NOT EXISTS holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, candle_type TEXT NOT NULL DEFAULT '1d', last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE);
     CREATE TABLE IF NOT EXISTS candles (symbol TEXT NOT NULL, interval TEXT NOT NULL, timestamp INTEGER NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY(symbol, interval, timestamp));
     CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, strategy_id TEXT NOT NULL, signal TEXT NOT NULL, timestamp INTEGER NOT NULL, price REAL NOT NULL, rationale TEXT NOT NULL, indicators TEXT NOT NULL, UNIQUE(portfolio_id, symbol, strategy_id, signal, timestamp));
     CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity REAL NOT NULL, price REAL NOT NULL, brokerage REAL NOT NULL, timestamp INTEGER NOT NULL);
@@ -106,13 +113,14 @@ async function initializeDatabase(): Promise<void> {
   const hasHoldingStrategyId = holdingStrategyColumns.rows.some((row) => String(row.name) === 'id');
   if (!hasHoldingStrategyLabel || !hasHoldingStrategyId) {
     await client.execute('ALTER TABLE holding_strategies RENAME TO holding_strategies_legacy');
-    await client.execute('CREATE TABLE holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE)');
+    await client.execute('CREATE TABLE holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, candle_type TEXT NOT NULL DEFAULT \'1d\', last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE)');
     const labelExpression = hasHoldingStrategyLabel ? 'label' : 'name';
     await client.execute(`INSERT INTO holding_strategies (id, portfolio_id, symbol, label, name, params) SELECT rowid, portfolio_id, symbol, ${labelExpression}, name, params FROM holding_strategies_legacy`);
     await client.execute('DROP TABLE holding_strategies_legacy');
   }
   const currentHoldingStrategyColumns = await client.execute('PRAGMA table_info(holding_strategies)');
   const currentHoldingStrategyColumnNames = new Set(currentHoldingStrategyColumns.rows.map((row) => String(row.name)));
+  if (!currentHoldingStrategyColumnNames.has('candle_type')) await client.execute("ALTER TABLE holding_strategies ADD COLUMN candle_type TEXT NOT NULL DEFAULT '1d'");
   if (!currentHoldingStrategyColumnNames.has('last_signal')) await client.execute('ALTER TABLE holding_strategies ADD COLUMN last_signal TEXT');
   if (!currentHoldingStrategyColumnNames.has('signal_updated_at')) await client.execute('ALTER TABLE holding_strategies ADD COLUMN signal_updated_at INTEGER');
   const adminUser = await db.select({ id: users.id }).from(users).where(eq(users.id, 'admin')).get();
@@ -145,6 +153,27 @@ export async function ensureUserProfile(input: { id: string; name: string; email
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   await ensureDatabase();
   return ((await db.select().from(users).where(eq(users.id, userId)).get()) as UserProfile | undefined) ?? null;
+}
+
+export async function getUserPreferences(userId: string): Promise<UserPreferences> {
+  await ensureDatabase();
+  const row = await db.select({ preferences: userPreferences.preferences }).from(userPreferences).where(eq(userPreferences.userId, userId)).get();
+  if (!row) return {};
+  try {
+    const parsed: unknown = JSON.parse(row.preferences);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as UserPreferences : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function updateUserPreferences(userId: string, updates: UserPreferences): Promise<UserPreferences> {
+  await ensureDatabase();
+  const current = await getUserPreferences(userId);
+  const preferences = { ...current, ...updates };
+  await db.insert(userPreferences).values({ userId, preferences: JSON.stringify(preferences), updatedAt: Date.now() })
+    .onConflictDoUpdate({ target: userPreferences.userId, set: { preferences: JSON.stringify(preferences), updatedAt: Date.now() } }).run();
+  return preferences;
 }
 
 export async function listPortfolios(userId = 'admin'): Promise<Array<Portfolio & { holdings: PortfolioHolding[] }>> {
@@ -190,9 +219,10 @@ function isStrategyParams(value: unknown): value is StrategyParams {
   });
 }
 
-function holdingStrategyFromRow(row: { id: number; portfolioId: number; symbol: string; label: string; name: string; params: string; lastSignal: string | null; signalUpdatedAt: number | null }): HoldingStrategy {
+function holdingStrategyFromRow(row: { id: number; portfolioId: number; symbol: string; label: string; name: string; params: string; candleType: string; lastSignal: string | null; signalUpdatedAt: number | null }): HoldingStrategy {
   const lastSignal = row.lastSignal === 'BUY' || row.lastSignal === 'SELL' || row.lastSignal === 'HOLD' ? row.lastSignal : null;
-  return { id: row.id, portfolioId: row.portfolioId, symbol: row.symbol, label: row.label, name: row.name, params: parseStrategyParams(row.params), lastSignal, signalUpdatedAt: row.signalUpdatedAt };
+  const candleType: CandleInterval = row.candleType === '1h' ? '1h' : '1d';
+  return { id: row.id, portfolioId: row.portfolioId, symbol: row.symbol, label: row.label, name: row.name, params: parseStrategyParams(row.params), candleType, lastSignal, signalUpdatedAt: row.signalUpdatedAt };
 }
 
 export async function getHoldingStrategy(portfolioId: number, symbol: string, userId = 'admin'): Promise<HoldingStrategy | null> {
@@ -216,7 +246,7 @@ export async function saveHoldingStrategy(input: HoldingStrategyInput, userId = 
   if (!input.name.trim()) throw new Error('Holding strategy name is required.');
   if (!input.label.trim()) throw new Error('Holding signal label is required.');
   await db.insert(holdings).values({ portfolioId: input.portfolioId, symbol: input.symbol, addedAt: Date.now() }).onConflictDoNothing().run();
-  const values = { portfolioId: input.portfolioId, symbol: input.symbol, label: input.label.trim(), name: input.name.trim(), params: JSON.stringify(input.params) };
+  const values = { portfolioId: input.portfolioId, symbol: input.symbol, label: input.label.trim(), name: input.name.trim(), params: JSON.stringify(input.params), candleType: input.candleType ?? '1d' };
   const row = input.id == null
     ? await db.insert(holdingStrategies).values(values).returning().get()
     : await db.update(holdingStrategies).set(values).where(and(eq(holdingStrategies.id, input.id), eq(holdingStrategies.portfolioId, input.portfolioId))).returning().get();
@@ -224,16 +254,38 @@ export async function saveHoldingStrategy(input: HoldingStrategyInput, userId = 
   return holdingStrategyFromRow(row);
 }
 
-export async function recordSignalState(portfolioId: number, strategyId: number, signal: SignalType, userId = 'admin', updatedAt = Date.now()): Promise<number> {
+export interface SignalStateChange {
+  updatedAt: number;
+  changed: boolean;
+  previousSignal: SignalType | null;
+}
+
+function validSignal(value: string | null): SignalType | null {
+  return value === 'BUY' || value === 'SELL' || value === 'HOLD' ? value : null;
+}
+
+export async function recordSignalStateChange(portfolioId: number, strategyId: number, signal: SignalType, userId = 'admin', updatedAt = Date.now()): Promise<SignalStateChange> {
   await ensureDatabase();
   if (!(await ownsPortfolio(portfolioId, userId))) throw new Error('Portfolio not found.');
   const row = await db.select({ lastSignal: holdingStrategies.lastSignal, signalUpdatedAt: holdingStrategies.signalUpdatedAt })
     .from(holdingStrategies).where(and(eq(holdingStrategies.id, strategyId), eq(holdingStrategies.portfolioId, portfolioId))).get();
   if (!row) throw new Error('Holding strategy not found.');
-  if (row.lastSignal === signal && row.signalUpdatedAt != null) return row.signalUpdatedAt;
-  await db.update(holdingStrategies).set({ lastSignal: signal, signalUpdatedAt: updatedAt })
-    .where(and(eq(holdingStrategies.id, strategyId), eq(holdingStrategies.portfolioId, portfolioId))).run();
-  return updatedAt;
+  const previousSignal = validSignal(row.lastSignal);
+  if (row.lastSignal === signal && row.signalUpdatedAt != null) return { updatedAt: row.signalUpdatedAt, changed: false, previousSignal };
+  const updated = await db.update(holdingStrategies).set({ lastSignal: signal, signalUpdatedAt: updatedAt })
+    .where(and(
+      eq(holdingStrategies.id, strategyId),
+      eq(holdingStrategies.portfolioId, portfolioId),
+      or(ne(holdingStrategies.lastSignal, signal), isNull(holdingStrategies.lastSignal), isNull(holdingStrategies.signalUpdatedAt)),
+    )).returning({ signalUpdatedAt: holdingStrategies.signalUpdatedAt }).get();
+  if (updated) return { updatedAt: updated.signalUpdatedAt ?? updatedAt, changed: previousSignal !== signal, previousSignal };
+  const latest = await db.select({ lastSignal: holdingStrategies.lastSignal, signalUpdatedAt: holdingStrategies.signalUpdatedAt })
+    .from(holdingStrategies).where(and(eq(holdingStrategies.id, strategyId), eq(holdingStrategies.portfolioId, portfolioId))).get();
+  return { updatedAt: latest?.signalUpdatedAt ?? updatedAt, changed: false, previousSignal: validSignal(latest?.lastSignal ?? null) };
+}
+
+export async function recordSignalState(portfolioId: number, strategyId: number, signal: SignalType, userId = 'admin', updatedAt = Date.now()): Promise<number> {
+  return (await recordSignalStateChange(portfolioId, strategyId, signal, userId, updatedAt)).updatedAt;
 }
 
 export async function removeHoldingStrategy(portfolioId: number, id: number, symbol: string, userId = 'admin'): Promise<void> {
@@ -410,6 +462,12 @@ export async function listAlerts(portfolioId?: number, userId = 'admin'): Promis
     ? await db.select().from(alerts).where(and(eq(alerts.userId, userId), eq(alerts.portfolioId, portfolioId))).orderBy(desc(alerts.timestamp)).limit(100).all()
     : await db.select().from(alerts).where(eq(alerts.userId, userId)).orderBy(desc(alerts.timestamp)).limit(100).all();
   return rows.map((row) => ({ ...row, indicators: JSON.parse(row.indicators) as Record<string, number> }));
+}
+
+export async function deleteAlert(alertId: number, userId = 'admin'): Promise<boolean> {
+  await ensureDatabase();
+  const result = await db.delete(alerts).where(and(eq(alerts.id, alertId), eq(alerts.userId, userId))).run();
+  return result.rowsAffected > 0;
 }
 
 export async function savePerformanceSnapshots(portfolioId: number, snapshots: PerformanceSnapshots): Promise<void> {

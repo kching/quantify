@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { CircleHelp } from 'lucide-react';
+import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import type { UserProfile } from '@/core/types';
 import './AppSidebar.css';
@@ -111,7 +112,7 @@ export default function AppSidebar({ page, navItems = [], hasPortfolio, user }: 
           <span className="profile-avatar" aria-hidden="true" style={user?.image ? { backgroundImage: `url(${user.image})` } : undefined}>{user?.image ? null : avatarLabel}</span>
           <span className="sidebar-profile-copy"><strong>{firstName}</strong></span>
         </button>
-        {profileOpen && <div className="profile-menu" role="menu"><button type="button" role="menuitem" onClick={() => void signOut({ callbackUrl: '/' })}>Sign out</button></div>}
+        {profileOpen && <div className="profile-menu" role="menu"><Link href="/preferences/telegram" role="menuitem" onClick={() => setProfileOpen(false)}>Preferences</Link><button type="button" role="menuitem" onClick={() => void signOut({ callbackUrl: '/' })}>Sign out</button></div>}
       </div>
     </SidebarFooter>
   </Sidebar>;

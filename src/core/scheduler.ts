@@ -48,6 +48,7 @@ async function runDailyCandleUpdate(): Promise<void> {
     const result = await updateAllPortfolioDailyCandles();
     console.info(`[quantify] Daily candle update complete: ${result.symbolCount} unique tickers backfilled.`);
     for (const warning of result.warnings) console.warn(`[quantify] ${warning}`);
+    publishMarketUpdate({ completedAt: Date.now() });
   } catch (error) {
     console.error('[quantify] Scheduled daily candle update failed.', error);
   }

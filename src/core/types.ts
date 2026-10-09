@@ -69,6 +69,9 @@ export interface UserProfile {
   updatedAt: number;
 }
 
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type UserPreferences = Record<string, JsonValue>;
+
 export interface PortfolioHolding {
   symbol: string;
   addedAt: number;
@@ -81,11 +84,12 @@ export interface HoldingStrategy {
   label: string;
   name: string;
   params: StrategyParams;
+  candleType: CandleInterval;
   lastSignal: SignalType | null;
   signalUpdatedAt: number | null;
 }
 
-export type HoldingStrategyInput = Omit<HoldingStrategy, 'id' | 'lastSignal' | 'signalUpdatedAt'> & { id?: number };
+export type HoldingStrategyInput = Omit<HoldingStrategy, 'id' | 'lastSignal' | 'signalUpdatedAt' | 'candleType'> & { id?: number; candleType?: CandleInterval };
 
 export interface PortfolioTrade {
   id: number;

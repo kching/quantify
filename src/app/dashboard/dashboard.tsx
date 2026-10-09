@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, LoaderCircle, RefreshCw, Trash2, Wallet } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, BarChart3, Bell, CircleX, LoaderCircle, RefreshCw, Trash2, Wallet } from 'lucide-react';
 import type { PerformanceSnapshots, Portfolio, PortfolioCashTransaction, PortfolioHolding, PortfolioTrade, SignalResult, UserProfile } from '@/core/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -342,6 +342,18 @@ function DashboardContent({ user }: { user?: Pick<UserProfile, 'name' | 'image'>
     } finally { setBusy(false); }
   }
 
+  async function dismissAlert(alertId: number): Promise<void> {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? 'Could not dismiss signal.');
+      setAlerts((current) => current.filter((alert) => alert.id !== alertId));
+    } catch (cause) {
+      reportError(cause, 'Could not dismiss signal.');
+    } finally { setBusy(false); }
+  }
+
   const currentPortfolio = portfolios.find((portfolio) => portfolio.id === portfolioId);
   const latestPortfolioPerformance = performance.portfolio.at(-1);
   const watchlistPageSize = 6;
@@ -397,7 +409,7 @@ function DashboardContent({ user }: { user?: Pick<UserProfile, 'name' | 'image'>
         </section>
 
         <section className="activity-section">
-          <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
+          <Card className="alerts-panel"><CardHeader className="section-card-header"><div><p className="section-kicker">ACTIVITY</p><CardTitle>Signal history</CardTitle></div><Badge variant="outline">{alerts.length} RECORDED</Badge></CardHeader><CardContent>{alerts.length ? <div className="alert-list">{alerts.slice(0, 8).map((alert) => <div className="alert-row" key={alert.id}><span className={`alert-dot ${alert.signal.toLowerCase()}`}/><div className="alert-main"><div><strong>{alert.symbol}</strong><Badge variant="outline" className="alert-strategy">{alert.strategyId === 'rsi-14' ? 'RSI (14)' : 'Klinger'}</Badge></div><small>{alert.rationale}</small></div><div className="alert-right"><SignalPill signal={alert.signal as SignalResult['signal']} compact/><small>{dateTime.format(alert.timestamp)}</small></div><Button variant="ghost" size="icon" className="alert-dismiss-button" aria-label={`Dismiss ${alert.symbol} signal`} title="Dismiss signal" disabled={busy} onClick={() => void dismissAlert(alert.id)}><CircleX className="size-4"/></Button></div>)}</div> : <div className="empty-activity"><span className="activity-icon"><Bell/></span><strong>No actionable signals yet</strong><p>When Klinger or RSI crosses its trigger, the event will be recorded here.</p></div>}</CardContent></Card>
         </section>
 
         <footer className="page-footer"><span>QUANTIFY <i>·</i> PERSONAL MARKET WORKSPACE</span></footer>

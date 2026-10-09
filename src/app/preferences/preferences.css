@@ -1,0 +1,24 @@
+.preferences-shell { min-height: 100vh; }
+.preferences-sidebar .sidebar-header { margin-bottom: 27px; }
+.preferences-brand { text-decoration: none; }
+.preferences-sidebar-heading { padding: 0 10px 10px; color: #75839a; font-size: 11px; font-weight: 750; letter-spacing: 1.15px; }
+.preferences-sidebar .nav-item { text-decoration: none; }
+.preferences-user { display: flex; align-items: center; gap: 10px; padding: 12px 8px 2px; border-top: 1px solid #29374d; color: #dce5f2; }
+.preferences-user > span:last-child { display: grid; gap: 3px; }
+.preferences-user strong { font-size: 13px; font-weight: 600; }
+.preferences-user small { color: #8592a6; font-size: 11px; }
+.preferences-main { min-height: 100vh; }
+.preferences-content { width: min(100%, 1050px); margin: 0 auto; padding: 33px clamp(22px, 3vw, 48px) 30px; }
+.preferences-back { margin-bottom: 23px; }
+.preferences-back a { display: inline-flex; align-items: center; gap: 7px; color: #718096; font-size: 13px; text-decoration: none; }
+.preferences-back svg { width: 15px; height: 15px; }
+.preferences-back a:hover { color: #2864dc; }
+.telegram-preferences-card { max-width: 760px; border-color: #e4e9f0; box-shadow: 0 2px 7px #20304a06; }
+.telegram-preferences-form { display: grid; gap: 6px; }
+.telegram-preferences-form label { display: grid; gap: 7px; color: #4f5d71; font-size: 13px; font-weight: 650; }
+.telegram-field-help { margin: -1px 0 13px; color: #8691a2; font-size: 12px; }
+.telegram-form-actions { display: flex; align-items: center; gap: 14px; margin-top: 7px; }
+.preferences-message { display: inline-flex; align-items: center; gap: 6px; color: #14805e; font-size: 13px; }
+.preferences-message.error { color: #c34859; }
+.preferences-message svg { width: 15px; height: 15px; }
+@media (max-width: 760px) { .preferences-sidebar { width: 72px; padding-right: 9px; padding-left: 9px; } .preferences-sidebar .sidebar-brand-copy, .preferences-sidebar-heading, .preferences-sidebar .sidebar-menu-label, .preferences-user > span:last-child { display: none; } .preferences-sidebar .sidebar-header { align-items: center; } .preferences-shell .app-main { margin-left: 72px; } }

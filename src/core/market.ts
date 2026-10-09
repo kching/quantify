@@ -1,11 +1,33 @@
 import { loadStrategy } from './engine';
-import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, listHoldingStrategies, listPortfolioTradeSymbols, listPortfolios, recordAlert, recordSignalState, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
+import { DAILY_CANDLE_HISTORY_DAYS, DAILY_CANDLE_RETENTION_MS, getCandles, getUserPreferences, listHoldingStrategies, listPortfolioTradeSymbols, listPortfolios, recordAlert, recordSignalStateChange, saveCandles, TIME_SERIES_RETENTION_MS } from './db';
 import { capturePortfolioPerformance } from './performance.service';
+import { sendTelegramSignalNotification } from './providers/telegram.provider';
 import { fetchYahooCandles } from './providers/yahoo.provider';
-import type { Candle, CandleInterval, HoldingStrategy, SignalResult, SignalStrategy, StrategyParams } from './types';
+import type { Candle, CandleInterval, HoldingStrategy, JsonValue, SignalResult, SignalStrategy, StrategyParams } from './types';
 
 const lastChecked = new Map<string, number>();
 const pendingRefreshes = new Map<string, Promise<Candle[]>>();
+
+async function recordSignalAndNotify(portfolioId: number, signal: SignalResult, userId: string, warnings: string[]): Promise<SignalResult & { stateUpdatedAt: number }> {
+  const state = await recordSignalStateChange(portfolioId, signal.signalId ?? 0, signal.signal, userId);
+  if (state.changed && state.previousSignal) {
+    try {
+      const preferences = await getUserPreferences(userId);
+      const telegram = preferences.telegram;
+      if (telegram && typeof telegram === 'object' && !Array.isArray(telegram)) {
+        const credentials = telegram as Record<string, JsonValue>;
+        const botToken = credentials.botToken;
+        const chatId = credentials.chatId;
+        if (typeof botToken === 'string' && typeof chatId === 'string' && botToken.trim() && chatId.trim()) {
+          await sendTelegramSignalNotification({ botToken, chatId, previousSignal: state.previousSignal, result: signal });
+        }
+      }
+    } catch (error: unknown) {
+      warnings.push(`${signal.symbol} Telegram notification: ${error instanceof Error ? error.message : 'delivery failed'}`);
+    }
+  }
+  return { ...signal, stateUpdatedAt: state.updatedAt };
+}
 
 async function refreshSymbol(symbol: string, interval: CandleInterval): Promise<Candle[]> {
   const key = `${symbol}:${interval}`;
@@ -62,6 +84,21 @@ export async function updateAllPortfolioDailyCandles(): Promise<{ symbolCount: n
       warnings.push(`${symbol} daily data: ${error instanceof Error ? error.message : 'refresh failed'}`);
     }
   }));
+  await Promise.all(portfolios.map(async (portfolio) => {
+    const holdingStrategies = await listHoldingStrategies(portfolio.id, portfolio.userId);
+    const tradedSymbols = await listPortfolioTradeSymbols(portfolio.id);
+    const ownedSymbols = new Set([...portfolio.holdings.map(({ symbol }) => symbol), ...tradedSymbols]);
+    await Promise.all([...ownedSymbols].map(async (symbol) => {
+      try {
+        const configured = holdingStrategies.filter((item) => item.symbol === symbol && item.candleType === '1d');
+        const result = await scanSymbol(symbol, warnings, configured, ['1d']);
+        const daily = await Promise.all(result.daily.map((signal) => recordSignalAndNotify(portfolio.id, signal, portfolio.userId, warnings)));
+        for (const signal of daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolio.id, signal, portfolio.userId);
+      } catch (error: unknown) {
+        warnings.push(`${symbol} daily signal: ${error instanceof Error ? error.message : 'evaluation failed'}`);
+      }
+    }));
+  }));
   return { symbolCount: symbols.size, warnings };
 }
 
@@ -93,18 +130,21 @@ async function configuredStrategies(symbol: string, holdingStrategies: readonly 
   return loaded.filter((item): item is LoadedStrategy => item.strategy !== null);
 }
 
-async function scanSymbol(symbol: string, warnings: string[], holdingStrategies: readonly HoldingStrategy[] = []): Promise<SymbolScan> {
-    const [dailyCandles, hourlyCandles] = await Promise.all([
-      refreshSymbol(symbol, '1d').catch(async (error: unknown) => { warnings.push(`${symbol} daily data: ${error instanceof Error ? error.message : 'refresh failed'}`); return getCandles(symbol, '1d'); }),
-      refreshSymbol(symbol, '1h').catch(async (error: unknown) => { warnings.push(`${symbol} hourly data: ${error instanceof Error ? error.message : 'refresh failed'}`); return getCandles(symbol, '1h'); }),
-    ]);
-    const selected = holdingStrategies.length ? await configuredStrategies(symbol, holdingStrategies, warnings) : [];
-    const daily = selected.map(({ id, label, strategy, params }) => ({ ...strategy.analyze(symbol, dailyCandles, params), label, signalId: id }));
-    const hourly = selected.map(({ id, label, strategy, params }) => ({ ...strategy.analyze(symbol, hourlyCandles, params), label, signalId: id }));
-    return {
-      daily, hourly,
-      dailyCandles: dailyCandles.slice(-90), hourlyCandles: hourlyCandles.slice(-48),
-    };
+async function scanSymbol(symbol: string, warnings: string[], holdingStrategies: readonly HoldingStrategy[] = [], intervals: readonly CandleInterval[] = ['1d', '1h']): Promise<SymbolScan> {
+  const dailyPromise = intervals.includes('1d')
+    ? refreshSymbol(symbol, '1d').catch(async (error: unknown) => { warnings.push(`${symbol} daily data: ${error instanceof Error ? error.message : 'refresh failed'}`); return getCandles(symbol, '1d'); })
+    : getCandles(symbol, '1d');
+  const hourlyPromise = intervals.includes('1h')
+    ? refreshSymbol(symbol, '1h').catch(async (error: unknown) => { warnings.push(`${symbol} hourly data: ${error instanceof Error ? error.message : 'refresh failed'}`); return getCandles(symbol, '1h'); })
+    : getCandles(symbol, '1h');
+  const [dailyCandles, hourlyCandles] = await Promise.all([dailyPromise, hourlyPromise]);
+  const selected = holdingStrategies.length ? await configuredStrategies(symbol, holdingStrategies, warnings) : [];
+  const daily = intervals.includes('1d') ? selected.filter(({ id }) => holdingStrategies.find((item) => item.id === id)?.candleType === '1d').map(({ id, label, strategy, params }) => ({ ...strategy.analyze(symbol, dailyCandles, params), label, signalId: id })) : [];
+  const hourly = intervals.includes('1h') ? selected.filter(({ id }) => holdingStrategies.find((item) => item.id === id)?.candleType === '1h').map(({ id, label, strategy, params }) => ({ ...strategy.analyze(symbol, hourlyCandles, params), label, signalId: id })) : [];
+  return {
+    daily, hourly,
+    dailyCandles: dailyCandles.slice(-90), hourlyCandles: hourlyCandles.slice(-48),
+  };
 }
 
 export async function scanPortfolio(portfolioId: number, userId = 'admin'): Promise<{ signals: Array<SymbolScan & { symbol: string }>; warnings: string[] }> {
@@ -117,9 +157,11 @@ export async function scanPortfolio(portfolioId: number, userId = 'admin'): Prom
   const signals = await Promise.all([...symbols].map(async (symbol) => {
     const configured = holdingStrategies.filter((holdingStrategy) => holdingStrategy.symbol === symbol);
     const result = await scanSymbol(symbol, warnings, configured);
-    const daily = await Promise.all(result.daily.map(async (signal) => ({ ...signal, stateUpdatedAt: await recordSignalState(portfolioId, signal.signalId ?? 0, signal.signal, userId) })));
-    const statefulResult = { ...result, daily };
+    const daily = await Promise.all(result.daily.map((signal) => recordSignalAndNotify(portfolioId, signal, userId, warnings)));
+    const hourly = await Promise.all(result.hourly.map((signal) => recordSignalAndNotify(portfolioId, signal, userId, warnings)));
+    const statefulResult = { ...result, daily, hourly };
     for (const signal of daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal, userId);
+    for (const signal of hourly) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(portfolioId, signal, userId);
     return { symbol, ...statefulResult };
   }));
   await capturePortfolioPerformance(portfolioId);
@@ -142,9 +184,9 @@ export async function updateAllPortfolioMarkets(): Promise<{ portfolioCount: num
   const warnings: string[] = [];
   await Promise.all([...ownersBySymbol].map(async ([symbol, owners]) => {
     await Promise.all(owners.map(async (owner) => {
-      const result = await scanSymbol(symbol, warnings, owner.holdingStrategies);
-      const daily = await Promise.all(result.daily.map(async (signal) => ({ ...signal, stateUpdatedAt: await recordSignalState(owner.id, signal.signalId ?? 0, signal.signal, owner.userId) })));
-      for (const signal of daily) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(owner.id, signal, owner.userId);
+      const result = await scanSymbol(symbol, warnings, owner.holdingStrategies.filter((item) => item.candleType === '1h'), ['1h']);
+      const hourly = await Promise.all(result.hourly.map((signal) => recordSignalAndNotify(owner.id, signal, owner.userId, warnings)));
+      for (const signal of hourly) if (signal.signal !== 'HOLD' && signal.price > 0) await recordAlert(owner.id, signal, owner.userId);
     }));
   }));
   await Promise.all(portfolios.map(({ id }) => capturePortfolioPerformance(id)));
