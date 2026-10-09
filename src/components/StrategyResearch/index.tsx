@@ -331,7 +331,16 @@ export default function StrategyResearch({
     return errors;
   }
   function rangeIsValid(name: RangeName): boolean {
-    return validateRange(name).length === 0;
+    const input = rangeInputs[name];
+    const min = parseInteger(input.min);
+    const max = parseInteger(input.max);
+    const step = parseInteger(input.step);
+    if (min === null || min < 1 || max === null || max < 1)
+      return false;
+    if (step === null || step < 0) return false;
+    const rangeWasBlurred =
+      touchedFields[name].min || touchedFields[name].max;
+    return !rangeWasBlurred || max >= min;
   }
   const visibleRangeNames: RangeName[] = parameterDescriptors.map(
     ({ id }) => id,
@@ -565,7 +574,12 @@ export default function StrategyResearch({
                   {parameterDescriptors.map(({ id: name, label }) => {
                     const rangeName = name as RangeName;
                     const input = rangeInputs[rangeName];
-                    const rangeError = validateRange(rangeName)[0];
+                    const rangeError = validateRange(rangeName).find(
+                      (error) =>
+                        !error.startsWith("Maximum must be at least the minimum") ||
+                        touchedFields[rangeName].min ||
+                        touchedFields[rangeName].max,
+                    );
                     return (
                       <div className="parameter-range" key={name}>
                         <span className="field-label">{label}</span>

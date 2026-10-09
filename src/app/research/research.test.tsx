@@ -119,6 +119,14 @@ describe("ResearchPage", () => {
 
     await act(async () => {
       fireEvent.change(
+        screen.getByRole("spinbutton", { name: "Fast period minimum" }),
+        { target: { value: "5" } },
+      );
+      fireEvent.change(
+        screen.getByRole("spinbutton", { name: "Fast period maximum" }),
+        { target: { value: "40" } },
+      );
+      fireEvent.change(
         screen.getByRole("spinbutton", { name: "Fast period step" }),
         { target: { value: "5" } },
       );
