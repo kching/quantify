@@ -77,7 +77,13 @@ const emptyPerformance: PerformanceSnapshots = { holdings: [], portfolio: [] };
 const money = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
+
+function wholeDollarMoney(value: number): string {
+  return money.format(Math.floor(value));
+}
 const dateTime = new Intl.DateTimeFormat("en-AU", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -776,41 +782,50 @@ function DashboardContent({
               <section className="metric-grid" aria-label="Portfolio summary">
                 <Card className="metric-card">
                   <CardContent className="metric-content">
-                    <div className="metric-icon blue">
-                      <Wallet />
+                    <div className="metric-heading">
+                      <div className="metric-icon blue">
+                        <Wallet />
+                      </div>
+                      <div className="metric-label">Portfolio</div>
                     </div>
-                    <div className="metric-label">TOTAL PORTFOLIO VALUE</div>
                     <strong>
                       {latestPortfolioPerformance
-                        ? money.format(latestPortfolioPerformance.totalValue)
+                        ? wholeDollarMoney(latestPortfolioPerformance.totalValue)
                         : "—"}
                     </strong>
-                    <small>
-                      {latestPortfolioPerformance
-                        ? "Cash + holdings at latest hourly close"
-                        : "Record trades and cash entries to track"}
-                    </small>
+                    <div className="metric-breakdown">
+                      <small>
+                        Holding value: {latestPortfolioPerformance
+                          ? wholeDollarMoney(latestPortfolioPerformance.marketValue)
+                          : "—"}
+                      </small>
+                      <small>
+                        Cash value: {latestPortfolioPerformance
+                          ? wholeDollarMoney(latestPortfolioPerformance.cashBalance)
+                          : "—"}
+                      </small>
+                    </div>
                   </CardContent>
                 </Card>
                 <Card className="metric-card">
                   <CardContent className="metric-content">
-                    <div
-                      className="metric-icon"
-                      data-positive={
-                        latestPortfolioPerformance
-                          ? latestPortfolioPerformance.profitLoss >= 0
-                          : undefined
-                      }
-                    >
-                      {latestPortfolioPerformance &&
-                      latestPortfolioPerformance.profitLoss >= 0 ? (
-                        <ArrowUpRight />
-                      ) : (
-                        <ArrowDownRight />
-                      )}
-                    </div>
-                    <div className="metric-label">
-                      PORTFOLIO PROFIT &amp; LOSS
+                    <div className="metric-heading">
+                      <div
+                        className="metric-icon"
+                        data-positive={
+                          latestPortfolioPerformance
+                            ? latestPortfolioPerformance.profitLoss >= 0
+                            : undefined
+                        }
+                      >
+                        {latestPortfolioPerformance &&
+                        latestPortfolioPerformance.profitLoss >= 0 ? (
+                          <ArrowUpRight />
+                        ) : (
+                          <ArrowDownRight />
+                        )}
+                      </div>
+                      <div className="metric-label">PROFIT &amp; LOSS</div>
                     </div>
                     <strong
                       className={
@@ -829,10 +844,12 @@ function DashboardContent({
                 </Card>
                 <Card className="metric-card">
                   <CardContent className="metric-content">
-                    <div className="metric-icon violet">
-                      <BarChart3 />
+                    <div className="metric-heading">
+                      <div className="metric-icon violet">
+                        <BarChart3 />
+                      </div>
+                      <div className="metric-label">WATCHLIST</div>
                     </div>
-                    <div className="metric-label">WATCHLIST</div>
                     <strong>
                       {currentPortfolio?.holdings.length ?? 0}
                       <span className="metric-unit"> assets</span>
@@ -845,10 +862,12 @@ function DashboardContent({
                 </Card>
                 <Card className="metric-card">
                   <CardContent className="metric-content">
-                    <div className="metric-icon amber">
-                      <Bell />
+                    <div className="metric-heading">
+                      <div className="metric-icon amber">
+                        <Bell />
+                      </div>
+                      <div className="metric-label">SIGNALS</div>
                     </div>
-                    <div className="metric-label">ACTIONABLE SIGNALS</div>
                     <strong>
                       {scan?.signals
                         .flatMap((row) => row.daily)

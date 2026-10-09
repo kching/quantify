@@ -458,6 +458,15 @@
   min-height: 132px;
   padding: 17px 17px 15px;
 }
+.metric-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.metric-heading .metric-icon {
+  margin-bottom: 0;
+}
 .metric-icon {
   display: grid;
   width: 29px;
@@ -499,6 +508,9 @@
   font-weight: 750;
   letter-spacing: 0.75px;
 }
+.metric-heading .metric-label {
+  margin-bottom: 0;
+}
 .metric-content > strong {
   display: block;
   color: #1d2a3c;
@@ -515,6 +527,16 @@
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.metric-breakdown {
+  margin-top: 5px;
+}
+.metric-breakdown > small {
+  display: block;
+  color: #8a95a6;
+  font-size: 11px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
 }
 .metric-unit {
   color: #778397;
