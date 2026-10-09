@@ -220,6 +220,7 @@ const holdingsRoute = await import("./portfolios/[id]/holdings/route");
 const alertsRoute = await import("./alerts/route");
 const scanRoute = await import("./scan/route");
 const backtestRoute = await import("./backtest/route");
+const backtestEventsRoute = await import("./backtest/events/route");
 const tradesRoute = await import("./portfolios/[id]/trades/route");
 const performanceRoute = await import("./portfolios/[id]/performance/route");
 const cashRoute = await import("./portfolios/[id]/cash/route");
@@ -292,6 +293,11 @@ describe("API route handlers", () => {
       fetchYahooCandles,
     ])
       handler.mockClear();
+    runBacktest.mockImplementation(() => ({
+      symbol: "TEST.AX",
+      strategyId: "klinger-oscillator",
+      trades: [],
+    }));
   });
 
   describe("/api/portfolios", () => {
@@ -713,7 +719,7 @@ describe("API route handlers", () => {
       expect(runBacktest).toHaveBeenCalledTimes(1);
     });
 
-    it("runs a parameter tuple sweep in one request", async () => {
+    it("streams sweep events and returns a summary after the batch completes", async () => {
       const now = Date.now();
       candles = Array.from({ length: 80 }, (_, index) => ({
         symbol: "MQG.AX",
@@ -726,15 +732,75 @@ describe("API route handlers", () => {
         volume: 1_000,
       }));
       runBacktest.mockClear();
+      runBacktest.mockImplementation(() => ({
+        symbol: "TEST.AX",
+        strategyId: "klinger-oscillator",
+        initialBalance: 10_000,
+        finalBalance: 10_500,
+        strategyReturnPct: 5,
+        buyAndHoldReturnPct: 10,
+        totalReturnPct: -5,
+        winRatePct: 50,
+        maxDrawdownPct: 4,
+        trades: [],
+      }));
       const tuple = (min: number, max: number, step: number): string =>
         encodeURIComponent(JSON.stringify([min, max, step]));
-      const response = await backtestRoute.GET(
+      const batchId = "sweep-test-1";
+      const eventResponse = await backtestEventsRoute.GET(
+        request(`/api/backtest/events?batchId=${batchId}`),
+      );
+      expect(eventResponse.status).toBe(200);
+      expect(eventResponse.headers.get("content-type")).toContain(
+        "text/event-stream",
+      );
+      const eventReader = eventResponse.body!.getReader();
+      const responsePromise = backtestRoute.POST(
         request(
           `/api/backtest?symbol=MQG.AX&fastPeriod=${tuple(10, 20, 10)}&slowPeriod=${tuple(30, 40, 10)}&signalPeriod=${tuple(5, 15, 10)}`,
+          "POST",
+          { batchId },
         ),
       );
+      const decoder = new TextDecoder();
+      let eventText = "";
+      while ((eventText.match(/event: result/g) ?? []).length < 8) {
+        const { value, done } = await eventReader.read();
+        if (done) throw new Error("Sweep event stream closed too early.");
+        eventText += decoder.decode(value);
+      }
+      const response = await responsePromise;
       expect(response.status).toBe(200);
-      expect((await payload(response)).results).toHaveLength(8);
+      expect(await payload(response)).toEqual({
+        summary: {
+          totalRuns: 8,
+          completedRuns: 8,
+          buyAndHoldReturnPct: 10,
+          buyAndHoldCagrPct: 10,
+          maxReturnRunIndex: 0,
+          maxReturnCagrPct: 5,
+          maxReturnVsBuyAndHoldPct: -5,
+          lowestDrawdownRunIndex: 0,
+          lowestDrawdownPct: 4,
+          balancedPickRunIndex: 0,
+          balancedPickCagrPct: 5,
+          balancedPickVsBuyAndHoldPct: -5,
+        },
+      });
+      expect(eventText.match(/event: result/g)).toHaveLength(8);
+      const eventRuns = eventText
+        .split("\n\n")
+        .filter(Boolean)
+        .map((frame) => {
+          const data = frame
+            .split("\n")
+            .find((line) => line.startsWith("data: "));
+          return data ? JSON.parse(data.slice(6)) : null;
+        });
+      expect(eventRuns.map((run) => run?.runIndex).sort()).toEqual([
+        0, 1, 2, 3, 4, 5, 6, 7,
+      ]);
+      await eventReader.cancel();
       expect(runBacktest).toHaveBeenCalledTimes(8);
     });
 

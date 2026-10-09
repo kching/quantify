@@ -18,6 +18,7 @@ interface SelectControlProps {
   placeholder?: string;
   displayValue?: ReactNode;
   className?: string;
+  disabled?: boolean;
   children: ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function SelectControl({
   placeholder,
   displayValue,
   className,
+  disabled = false,
   children,
 }: SelectControlProps) {
   const selectedOption = Children.toArray(children).find(
@@ -45,6 +47,7 @@ export function SelectControl({
   return (
     <Select.Root
       value={value}
+      disabled={disabled}
       onValueChange={(nextValue) => {
         if (typeof nextValue === "string") onValueChange(nextValue);
       }}

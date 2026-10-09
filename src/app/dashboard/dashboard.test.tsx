@@ -722,8 +722,7 @@ describe("Dashboard", () => {
     expect(await screen.findByText("5 @ $120.00")).toBeDefined();
     const tradeRequest = fetchMock.mock.calls.find(
       ([url, init]) =>
-        String(url) === "/api/portfolios/1/trades" &&
-        init?.method === "POST",
+        String(url) === "/api/portfolios/1/trades" && init?.method === "POST",
     );
     expect(JSON.parse(String(tradeRequest?.[1]?.body))).toMatchObject({
       symbol: "CSL",
@@ -811,7 +810,7 @@ describe("Dashboard", () => {
       }),
     );
     expect(confirmMock).toHaveBeenCalledWith(
-      expect.stringContaining("Delete trade BUY 2 MQG.AX @ $100.00?"),
+      expect.stringContaining("Delete trade BUY 2 MQG.AX @ $100?"),
     );
     await waitFor(() => expect(screen.queryByText("2 @ $100.00")).toBeNull());
   });
@@ -879,7 +878,7 @@ describe("Dashboard", () => {
       }),
     );
     expect(confirmMock).toHaveBeenCalledWith(
-      "Delete cash deposit of $100.00? Portfolio performance will be recalculated.",
+      "Delete cash deposit of $100? Portfolio performance will be recalculated.",
     );
     expect(
       (await screen.findAllByText("Page 1 of 1")).length,

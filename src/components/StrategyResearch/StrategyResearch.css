@@ -337,7 +337,7 @@
     right: 0;
     left: 0;
     z-index: 1;
-    border-top: 2px dotted #8793a4;
+    border-top: 2px dashed #8793a4;
     pointer-events: none;
   }
   .axis-label {

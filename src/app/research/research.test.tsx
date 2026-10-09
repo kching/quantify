@@ -27,17 +27,77 @@ const result = {
   ],
 };
 
+class MockEventSource {
+  static latest: MockEventSource | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  closed = false;
+  private listeners = new Map<string, Array<(event: Event) => void>>();
+
+  constructor(readonly url: string) {
+    MockEventSource.latest = this;
+    queueMicrotask(() => this.onopen?.(new Event("open")));
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  emit(type: string, data: string): void {
+    const event = new MessageEvent(type, { data });
+    this.listeners.get(type)?.forEach((listener) => listener(event));
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
 let status = 200;
-const fetchMock = mock(async (url: string): Promise<Response> => {
-  void url;
-  return status === 200
-    ? Response.json({ results: [result] })
-    : Response.json({ error: "Not enough hourly candles." }, { status });
-});
+const fetchMock = mock(
+  async (url: string, init?: RequestInit): Promise<Response> => {
+    void url;
+    if (init?.method === "POST" && status === 200) {
+      queueMicrotask(() =>
+        MockEventSource.latest?.emit(
+          "result",
+          JSON.stringify({
+            runIndex: 0,
+            params: { fastPeriod: 5, slowPeriod: 30, signalPeriod: 5 },
+            result,
+          }),
+        ),
+      );
+      return Response.json({
+        summary: {
+          totalRuns: 1,
+          completedRuns: 1,
+          buyAndHoldReturnPct: 8,
+          buyAndHoldCagrPct: 36.6,
+          maxReturnRunIndex: 0,
+          maxReturnCagrPct: 61.2,
+          maxReturnVsBuyAndHoldPct: 24.6,
+          lowestDrawdownRunIndex: 0,
+          lowestDrawdownPct: 8.2,
+          balancedPickRunIndex: 0,
+          balancedPickCagrPct: 61.2,
+          balancedPickVsBuyAndHoldPct: 24.6,
+        },
+      });
+    }
+    return status === 200
+      ? Response.json({ error: "Unexpected request." }, { status: 500 })
+      : Response.json({ error: "Not enough hourly candles." }, { status });
+  },
+);
 
 beforeEach(() => {
   status = 200;
   fetchMock.mockClear();
+  MockEventSource.latest = null;
+  (
+    globalThis as typeof globalThis & { EventSource: typeof EventSource }
+  ).EventSource = MockEventSource as unknown as typeof EventSource;
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
 
@@ -49,6 +109,7 @@ describe("ResearchPage", () => {
   it("runs a selected strategy sweep and shows the results workspace", async () => {
     render(<ResearchPage />);
 
+    expect(screen.queryByText("Strategy return vs drawdown")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Run parameter sweep" }),
     );
@@ -56,11 +117,10 @@ describe("ResearchPage", () => {
     expect(
       await screen.findByText("Strategy return vs drawdown"),
     ).toBeDefined();
+    expect(screen.getByText("Configure your backtest")).toBeDefined();
     expect(screen.getByText("Buy-and-hold return")).toBeDefined();
     expect(screen.getByText("Maximum return")).toBeDefined();
-    expect(
-      screen.getAllByText("+61.2% p.a. (+24.6% p.a.)"),
-    ).toHaveLength(2);
+    expect(screen.getAllByText("+61.2% p.a. (+24.6% p.a.)")).toHaveLength(2);
     expect(
       screen.getByRole("img", { name: "Buy-and-hold return +36.6% p.a." }),
     ).toBeDefined();
@@ -74,6 +134,97 @@ describe("ResearchPage", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("cadence=hourly");
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("days=90");
+  });
+
+  it("shows streamed results below the input and disables inputs until done", async () => {
+    fetchMock.mockImplementationOnce(async (): Promise<Response> => {
+      const eventSource = MockEventSource.latest!;
+      eventSource.emit(
+        "result",
+        JSON.stringify({
+          runIndex: 0,
+          params: { fastPeriod: 5, slowPeriod: 30, signalPeriod: 5 },
+          result,
+        }),
+      );
+      setTimeout(
+        () =>
+          eventSource.emit(
+            "result",
+            JSON.stringify({
+              runIndex: 1,
+              params: { fastPeriod: 10, slowPeriod: 30, signalPeriod: 5 },
+              result,
+            }),
+          ),
+        500,
+      );
+      return Response.json({
+        summary: {
+          totalRuns: 2,
+          completedRuns: 2,
+          buyAndHoldReturnPct: 8,
+          buyAndHoldCagrPct: 36.6,
+          maxReturnRunIndex: 0,
+          maxReturnCagrPct: 61.2,
+          maxReturnVsBuyAndHoldPct: 24.6,
+          lowestDrawdownRunIndex: 0,
+          lowestDrawdownPct: 8.2,
+          balancedPickRunIndex: 0,
+          balancedPickCagrPct: 61.2,
+          balancedPickVsBuyAndHoldPct: 24.6,
+        },
+      });
+    });
+    render(<ResearchPage />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Run parameter sweep" }),
+    );
+
+    await screen.findByRole("button", { name: "Select run 1" });
+    fireEvent.click(screen.getByRole("button", { name: "Select run 1" }));
+    expect(screen.getByText("Configure your backtest")).toBeDefined();
+    expect(screen.getAllByText("+61.2% p.a.").length).toBeGreaterThan(0);
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Ticker for backtest",
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: "Fast period minimum",
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Hourly" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Running sweep…" }),
+    ).toBeDefined();
+    await screen.findByRole("button", { name: "Select run 2" });
+    expect(
+      screen.getAllByText("+61.2% p.a. (+24.6% p.a.)").length,
+    ).toBeGreaterThan(0);
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Ticker for backtest",
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: "Fast period minimum",
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(false);
+    expect(MockEventSource.latest?.closed).toBe(true);
   });
 
   it("shows an API error when the backtest cannot run", async () => {

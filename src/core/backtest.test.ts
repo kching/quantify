@@ -111,6 +111,33 @@ describe("runBacktest", () => {
     expect(result.trades).toEqual([]);
   });
 
+  it("ignores trades with invalid execution prices so results stay finite", () => {
+    const candles = makeCandles(63);
+    candles[60]!.open = 0;
+    candles[62]!.open = 110;
+    const result = runBacktest(
+      "TEST.AX",
+      candles,
+      strategyForSignals({ 60: "BUY", 62: "SELL" }),
+    );
+
+    expect(result.trades).toEqual([]);
+    expect(result.finalBalance).toBe(10_000);
+    expect(result.strategyReturnPct).toBe(0);
+    expect(result.buyAndHoldReturnPct).toBe(0);
+    expect(Number.isFinite(result.totalReturnPct)).toBe(true);
+    expect(Number.isFinite(result.maxDrawdownPct)).toBe(true);
+  });
+
+  it("keeps buy-and-hold return finite when the final close is invalid", () => {
+    const candles = makeCandles(63);
+    candles[62]!.close = Number.NaN;
+    const result = runBacktest("TEST.AX", candles, strategyForSignals({}));
+
+    expect(result.buyAndHoldReturnPct).toBe(0);
+    expect(Number.isFinite(result.totalReturnPct)).toBe(true);
+  });
+
   it("does not mutate its candle input", () => {
     const candles = makeCandles(63);
     const before = structuredClone(candles);

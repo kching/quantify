@@ -6,20 +6,26 @@ import {
   saveCandles,
 } from "@/core/db";
 import { runBacktest } from "@/core/backtest";
+import { forEachConcurrent } from "@/core/concurrent";
 import { strategies } from "@/core/engine";
 import { fetchYahooCandles } from "@/core/providers/yahoo.provider";
 import type { CandleInterval } from "@/core/types";
 import type {
-  BacktestResult,
+  BacktestSweepSummary,
   SignalStrategy,
   StrategyParams,
 } from "@/core/types";
+import {
+  completeBacktestEvents,
+  publishBacktestResult,
+} from "@/lib/backtest-events";
 import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 
 type ParameterTuple = [number, number, number];
 const MAX_SWEEP_RUNS = 10_000;
+const MAX_CONCURRENT_SWEEP_RUNS = 5;
 
 function parseParameterTuple(raw: string | null): ParameterTuple | null {
   if (!raw) return null;
@@ -51,6 +57,13 @@ function parameterValues([min, max, step]: ParameterTuple): number[] {
     (_, index) => min + index * step,
   );
   return Array.from(new Set([...values, max]));
+}
+
+function annualizedReturn(returnPct: number, days: number): number {
+  const growthFactor = Math.max(0, 1 + returnPct / 100);
+  const annualizedPct =
+    (Math.pow(growthFactor, 365 / Math.max(days, 1)) - 1) * 100;
+  return Math.round(annualizedPct * 10) / 10;
 }
 
 function sweepParameterSets(
@@ -88,7 +101,10 @@ function sweepParameterSets(
   );
 }
 
-export async function GET(request: Request): Promise<Response> {
+async function runBacktestRequest(
+  request: Request,
+  batchId?: string,
+): Promise<Response> {
   if (!(await getCurrentUser()))
     return Response.json({ error: "Sign in required." }, { status: 401 });
   const query = new URL(request.url).searchParams;
@@ -125,6 +141,11 @@ export async function GET(request: Request): Promise<Response> {
     if (!parameterSets)
       return Response.json(
         { error: "Sweep parameters must be [min, max, step] tuples." },
+        { status: 400 },
+      );
+    if (!batchId)
+      return Response.json(
+        { error: "A batch id is required for parameter sweeps." },
         { status: 400 },
       );
   }
@@ -182,12 +203,119 @@ export async function GET(request: Request): Promise<Response> {
   );
   const windowCutoff = Date.now() - days * 86_400_000;
   const window = candles.filter((candle) => candle.timestamp >= windowCutoff);
-  const results: BacktestResult[] = parameterSets
-    ? parameterSets.map((sweepParams) =>
-        runBacktest(symbol, window, strategy, 10_000, sweepParams),
-      )
-    : [runBacktest(symbol, window, strategy, 10_000, params)];
-  return parameterSets
-    ? Response.json({ results })
-    : Response.json({ result: results[0] });
+  if (!parameterSets)
+    return Response.json({
+      result: runBacktest(symbol, window, strategy, 10_000, params),
+    });
+
+  const sweepBatchId = batchId!;
+  let completedRuns = 0;
+  let buyAndHoldReturnPct = 0;
+  let maximumReturn = Number.NEGATIVE_INFINITY;
+  let lowestDrawdown = Number.POSITIVE_INFINITY;
+  let bestBalanceScore = Number.NEGATIVE_INFINITY;
+  let maxReturnRunIndex = 0;
+  let maxReturnCagrPct = 0;
+  let lowestDrawdownRunIndex = 0;
+  let balancedPickRunIndex = 0;
+  let balancedPickCagrPct = 0;
+  try {
+    await forEachConcurrent(
+      parameterSets,
+      MAX_CONCURRENT_SWEEP_RUNS,
+      async (sweepParams, index) => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        const result = runBacktest(
+          symbol,
+          window,
+          strategy,
+          10_000,
+          sweepParams,
+        );
+        publishBacktestResult(sweepBatchId, {
+          runIndex: index,
+          params: sweepParams,
+          result,
+        });
+        if (completedRuns === 0)
+          buyAndHoldReturnPct = result.buyAndHoldReturnPct;
+        if (result.strategyReturnPct > maximumReturn) {
+          maximumReturn = result.strategyReturnPct;
+          maxReturnRunIndex = index;
+        }
+        if (result.maxDrawdownPct < lowestDrawdown) {
+          lowestDrawdown = result.maxDrawdownPct;
+          lowestDrawdownRunIndex = index;
+        }
+        const strategyCagr = annualizedReturn(result.strategyReturnPct, days);
+        const balanceScore = strategyCagr + result.maxDrawdownPct;
+        if (balanceScore > bestBalanceScore) {
+          bestBalanceScore = balanceScore;
+          balancedPickRunIndex = index;
+          balancedPickCagrPct = strategyCagr;
+        }
+        if (result.strategyReturnPct === maximumReturn)
+          maxReturnCagrPct = strategyCagr;
+        completedRuns += 1;
+      },
+    );
+  } catch (failure) {
+    completeBacktestEvents(sweepBatchId);
+    return Response.json(
+      {
+        error:
+          failure instanceof Error ? failure.message : "A backtest run failed.",
+      },
+      { status: 500 },
+    );
+  }
+  completeBacktestEvents(sweepBatchId);
+  const summary: BacktestSweepSummary = {
+    totalRuns: parameterSets.length,
+    completedRuns,
+    buyAndHoldReturnPct,
+    buyAndHoldCagrPct: annualizedReturn(buyAndHoldReturnPct, days),
+    maxReturnRunIndex,
+    maxReturnCagrPct,
+    maxReturnVsBuyAndHoldPct:
+      maxReturnCagrPct - annualizedReturn(buyAndHoldReturnPct, days),
+    lowestDrawdownRunIndex,
+    lowestDrawdownPct: lowestDrawdown,
+    balancedPickRunIndex,
+    balancedPickCagrPct,
+    balancedPickVsBuyAndHoldPct:
+      balancedPickCagrPct - annualizedReturn(buyAndHoldReturnPct, days),
+  };
+  return Response.json({
+    summary,
+  });
+}
+
+export async function GET(request: Request): Promise<Response> {
+  return runBacktestRequest(request);
+}
+
+export async function POST(request: Request): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 },
+    );
+  }
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    !("batchId" in body) ||
+    typeof body.batchId !== "string" ||
+    !/^[a-zA-Z0-9-]{1,80}$/.test(body.batchId)
+  )
+    return Response.json(
+      { error: "A valid batch id is required." },
+      { status: 400 },
+    );
+  return runBacktestRequest(request, body.batchId);
 }

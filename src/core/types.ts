@@ -166,3 +166,18 @@ export interface BacktestResult {
   maxDrawdownPct: number;
   trades: BacktestTrade[];
 }
+
+export interface BacktestSweepSummary {
+  totalRuns: number;
+  completedRuns: number;
+  buyAndHoldReturnPct: number;
+  buyAndHoldCagrPct: number;
+  maxReturnRunIndex: number;
+  maxReturnCagrPct: number;
+  maxReturnVsBuyAndHoldPct: number;
+  lowestDrawdownRunIndex: number;
+  lowestDrawdownPct: number;
+  balancedPickRunIndex: number;
+  balancedPickCagrPct: number;
+  balancedPickVsBuyAndHoldPct: number;
+}

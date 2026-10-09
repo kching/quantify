@@ -3,8 +3,10 @@
 import { useState } from "react";
 import type {
   BacktestResult,
+  BacktestSweepSummary,
   HoldingStrategy,
   Portfolio,
+  StrategyParams,
   UserProfile,
 } from "@/core/types";
 import StrategyResearch, {
@@ -33,7 +35,10 @@ export default function ResearchPage({
   async function runBacktest(input: StrategyResearchInput): Promise<boolean> {
     setBusy(true);
     setError("");
+    setResult(null);
+    let closeEventSource: (() => void) | undefined;
     try {
+      const batchId = crypto.randomUUID();
       const parameterTuple = (range: {
         min: number;
         max: number;
@@ -52,19 +57,92 @@ export default function ResearchPage({
         search.set("slowPeriod", parameterTuple(input.ranges.slowPeriod));
         search.set("signalPeriod", parameterTuple(input.ranges.signalPeriod));
       }
-      const response = await fetch(`/api/backtest?${search.toString()}`);
-      const body = (await response.json()) as {
-        results?: BacktestResult[];
-        error?: string;
-      };
-      if (!response.ok || !body.results)
-        throw new Error(body.error ?? "Backtest failed.");
-      setResult({ ...input, runs: body.results });
+      const runs: BacktestResult[] = [];
+      const runIndices: number[] = [];
+      const runParams: StrategyParams[] = [];
+      let summary: BacktestSweepSummary | null = null;
+      let startRequested = false;
+      await new Promise<void>((resolve, reject) => {
+        const finishIfComplete = (): void => {
+          if (!summary || runs.length !== summary.completedRuns) return;
+          setResult({
+            ...input,
+            runs: [...runs],
+            runIndices: [...runIndices],
+            runParams: [...runParams],
+            summary,
+          });
+          resolve();
+        };
+        const eventSource = new EventSource(
+          `/api/backtest/events?batchId=${encodeURIComponent(batchId)}`,
+        );
+        closeEventSource = () => eventSource.close();
+        eventSource.addEventListener("result", (event: Event) => {
+          try {
+            const run = JSON.parse((event as MessageEvent<string>).data) as {
+              runIndex: number;
+              params: StrategyParams;
+              result: BacktestResult;
+            };
+            if (
+              !Number.isInteger(run.runIndex) ||
+              run.runIndex < 0 ||
+              runIndices.includes(run.runIndex)
+            )
+              return;
+            runs.push(run.result);
+            runIndices.push(run.runIndex);
+            runParams.push(run.params);
+            setResult({
+              ...input,
+              runs: [...runs],
+              runIndices: [...runIndices],
+              runParams: [...runParams],
+            });
+            finishIfComplete();
+          } catch (cause) {
+            reject(
+              cause instanceof Error
+                ? cause
+                : new Error("Backtest result was invalid."),
+            );
+          }
+        });
+        eventSource.onopen = () => {
+          if (startRequested) return;
+          startRequested = true;
+          void fetch(`/api/backtest?${search.toString()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ batchId }),
+          })
+            .then(async (response) => {
+              const body = (await response.json()) as {
+                summary?: BacktestSweepSummary;
+                error?: string;
+              };
+              if (!response.ok)
+                throw new Error(body.error ?? "Backtest failed.");
+              if (
+                !body.summary ||
+                body.summary.totalRuns !== body.summary.completedRuns
+              )
+                throw new Error("Backtest summary was invalid.");
+              summary = body.summary;
+              finishIfComplete();
+            })
+            .catch(reject);
+        };
+        eventSource.onerror = () =>
+          reject(new Error("The backtest event connection failed."));
+      });
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Backtest failed.");
       return false;
     } finally {
+      closeEventSource?.();
       setBusy(false);
     }
   }

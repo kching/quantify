@@ -11,8 +11,17 @@ const BACKTEST_START_INDEX = 60;
 function calculateBuyAndHoldReturn(candles: readonly Candle[]): number {
   const firstCandle = candles[BACKTEST_START_INDEX];
   const lastCandle = candles.at(-1);
-  if (!firstCandle || !lastCandle || firstCandle.open <= 0) return 0;
-  return (lastCandle.close / firstCandle.open - 1) * 100;
+  if (
+    !firstCandle ||
+    !lastCandle ||
+    !Number.isFinite(firstCandle.open) ||
+    firstCandle.open <= 0 ||
+    !Number.isFinite(lastCandle.close) ||
+    lastCandle.close <= 0
+  )
+    return 0;
+  const returnPct = (lastCandle.close / firstCandle.open - 1) * 100;
+  return Number.isFinite(returnPct) ? returnPct : 0;
 }
 
 export function runBacktest(
@@ -34,9 +43,14 @@ export function runBacktest(
       candles.slice(0, index),
       params,
     ).signal;
-    if (!entry && signal === "BUY") entry = { ...current, close: current.open };
-    else if (entry && signal === "SELL") {
+    const executionPriceIsValid =
+      Number.isFinite(current.open) && current.open > 0;
+    if (!entry && signal === "BUY" && executionPriceIsValid)
+      entry = { ...current, close: current.open };
+    else if (entry && signal === "SELL" && executionPriceIsValid) {
       const pnlPct = current.open / entry.close - 1;
+      if (!Number.isFinite(pnlPct) || !Number.isFinite(balance * (1 + pnlPct)))
+        continue;
       balance *= 1 + pnlPct;
       trades.push({
         entryDate: entry.timestamp,
