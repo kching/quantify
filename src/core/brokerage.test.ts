@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'bun:test';
-import { calculateBrokerage } from './brokerage';
+import { describe, expect, it } from "bun:test";
+import { calculateBrokerage } from "./brokerage";
 
-describe('calculateBrokerage', () => {
-  it('applies each brokerage tier at its boundaries', () => {
+describe("calculateBrokerage", () => {
+  it("applies each brokerage tier at its boundaries", () => {
     expect(calculateBrokerage(1_000)).toBe(5);
     expect(calculateBrokerage(1_000.01)).toBe(10);
     expect(calculateBrokerage(3_000)).toBe(10);

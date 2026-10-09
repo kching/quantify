@@ -1,9 +1,10 @@
-export type SignalType = 'BUY' | 'SELL' | 'HOLD';
-export type CandleInterval = '1h' | '1d';
-export type TradeSide = 'BUY' | 'SELL';
+export type SignalType = "BUY" | "SELL" | "HOLD";
+export type CandleInterval = "1h" | "1d";
+export type TradeSide = "BUY" | "SELL";
 export type StrategyParamValue = number | number[] | boolean | boolean[];
 export type StrategyParams = Record<string, StrategyParamValue>;
-export type ParamDescriptorType = 'number' | 'number[]' | 'boolean' | 'boolean[]';
+export type ParamDescriptorType =
+  "number" | "number[]" | "boolean" | "boolean[]";
 
 export interface ParamDefaultValues {
   min: StrategyParamValue;
@@ -46,7 +47,11 @@ export interface SignalResult {
 }
 
 export interface SignalStrategy {
-  analyze(symbol: string, candles: readonly Candle[], params?: StrategyParams): SignalResult;
+  analyze(
+    symbol: string,
+    candles: readonly Candle[],
+    params?: StrategyParams,
+  ): SignalResult;
   get inputParams(): ParamDescriptior[];
   get id(): string;
   get name(): string;
@@ -69,7 +74,8 @@ export interface UserProfile {
   updatedAt: number;
 }
 
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type JsonValue =
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type UserPreferences = Record<string, JsonValue>;
 
 export interface PortfolioHolding {
@@ -89,7 +95,10 @@ export interface HoldingStrategy {
   signalUpdatedAt: number | null;
 }
 
-export type HoldingStrategyInput = Omit<HoldingStrategy, 'id' | 'lastSignal' | 'signalUpdatedAt' | 'candleType'> & { id?: number; candleType?: CandleInterval };
+export type HoldingStrategyInput = Omit<
+  HoldingStrategy,
+  "id" | "lastSignal" | "signalUpdatedAt" | "candleType"
+> & { id?: number; candleType?: CandleInterval };
 
 export interface PortfolioTrade {
   id: number;
@@ -102,7 +111,7 @@ export interface PortfolioTrade {
   timestamp: number;
 }
 
-export type CashTransactionType = 'DEPOSIT' | 'WITHDRAWAL';
+export type CashTransactionType = "DEPOSIT" | "WITHDRAWAL";
 
 export interface PortfolioCashTransaction {
   id: number;

@@ -1,130 +1,130 @@
 @layer component-styles {
-    .cash-form {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
+  .cash-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
 
+  .cash-form-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  .cash-form-row > label {
+    flex: 1 1 0;
+  }
+
+  .cash-form-row:first-child {
+    width: min(100%, 480px);
+  }
+
+  .cash-form-row:first-child > label:first-child {
+    flex: 0 0 180px;
+  }
+
+  .cash-form label {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    color: #7f8b9d;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.65px;
+  }
+
+  .cash-form label input {
+    font-weight: 450;
+    letter-spacing: 0;
+  }
+
+  .cash-form input[type="datetime-local"] {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 14px;
+  }
+
+  .cash-form-actions {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .cash-history {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    margin-top: 18px;
+    padding-top: 15px;
+    border-top: 1px solid #e9edf3;
+  }
+
+  .cash-history h4 {
+    margin: 0 0 7px;
+    color: #2a374b;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  .cash-table {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .cash-row {
+    display: grid;
+    grid-template-columns: 82px 90px minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 8px;
+    min-height: 37px;
+    border-top: 1px solid #eef1f5;
+    color: #637087;
+    font-size: 11px;
+  }
+
+  .cash-row > strong {
+    color: #34435a;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cash-row > small {
+    color: #8a96a6;
+    font-size: 10px;
+  }
+
+  .cash-delete-button {
+    color: #9aa3b0;
+  }
+
+  .cash-delete-button:hover {
+    color: #bf4355;
+  }
+
+  @media (max-width: 520px) {
     .cash-form-row {
-        display: flex;
-        gap: 12px;
-    }
-
-    .cash-form-row > label {
-        flex: 1 1 0;
-    }
-
-    .cash-form-row:first-child {
-        width: min(100%, 480px);
-    }
-
-    .cash-form-row:first-child > label:first-child {
-        flex: 0 0 180px;
-    }
-
-    .cash-form label {
-        display: flex;
-        min-width: 0;
-        flex-direction: column;
-        gap: 6px;
-        color: #7f8b9d;
-        font-size: 10px;
-        font-weight: 750;
-        letter-spacing: .65px;
-    }
-
-    .cash-form label input {
-        font-weight: 450;
-        letter-spacing: 0;
-    }
-
-    .cash-form input[type="datetime-local"] {
-        box-sizing: border-box;
-        width: 100%;
-        min-width: 0;
-        max-width: 100%;
-        padding-right: 8px;
-        padding-left: 8px;
-        font-size: 14px;
-    }
-
-    .cash-form-actions {
-        display: flex;
-        justify-content: flex-start;
-    }
-
-    .cash-history {
-        display: flex;
-        min-height: 0;
-        flex: 1;
-        flex-direction: column;
-        margin-top: 18px;
-        padding-top: 15px;
-        border-top: 1px solid #e9edf3;
-    }
-
-    .cash-history h4 {
-        margin: 0 0 7px;
-        color: #2a374b;
-        font-size: 14px;
-        font-weight: 650;
-    }
-
-    .cash-table {
-        display: flex;
-        min-height: 0;
-        flex: 1;
-        flex-direction: column;
-        overflow-y: auto;
+      gap: 8px;
     }
 
     .cash-row {
-        display: grid;
-        grid-template-columns: 82px 90px minmax(0, 1fr) 34px;
-        align-items: center;
-        gap: 8px;
-        min-height: 37px;
-        border-top: 1px solid #eef1f5;
-        color: #637087;
-        font-size: 11px;
-    }
-
-    .cash-row > strong {
-        color: #34435a;
-        font-variant-numeric: tabular-nums;
+      grid-template-columns: 75px 75px minmax(0, 1fr) 31px;
     }
 
     .cash-row > small {
-        color: #8a96a6;
-        font-size: 10px;
+      grid-column: 3;
+      grid-row: 2;
+      padding-bottom: 5px;
     }
 
-    .cash-delete-button {
-        color: #9aa3b0;
+    .cash-row > button {
+      grid-column: 4;
+      grid-row: 1 / 3;
     }
-
-    .cash-delete-button:hover {
-        color: #bf4355;
-    }
-
-    @media (max-width: 520px) {
-        .cash-form-row {
-            gap: 8px;
-        }
-
-        .cash-row {
-            grid-template-columns: 75px 75px minmax(0, 1fr) 31px;
-        }
-
-        .cash-row > small {
-            grid-column: 3;
-            grid-row: 2;
-            padding-bottom: 5px;
-        }
-
-        .cash-row > button {
-            grid-column: 4;
-            grid-row: 1 / 3;
-        }
-    }
+  }
 }

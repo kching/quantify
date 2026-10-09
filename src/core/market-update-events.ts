@@ -9,9 +9,12 @@ interface MarketUpdateGlobal {
 }
 
 const marketUpdateGlobal = globalThis as typeof globalThis & MarketUpdateGlobal;
-const listeners = marketUpdateGlobal.quantifyMarketUpdateListeners ??= new Set<MarketUpdateListener>();
+const listeners = (marketUpdateGlobal.quantifyMarketUpdateListeners ??=
+  new Set<MarketUpdateListener>());
 
-export function subscribeToMarketUpdates(listener: MarketUpdateListener): () => void {
+export function subscribeToMarketUpdates(
+  listener: MarketUpdateListener,
+): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }

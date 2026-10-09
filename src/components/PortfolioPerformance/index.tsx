@@ -1,30 +1,295 @@
-'use client';
+"use client";
 
-import { Tabs } from '@base-ui/react/tabs';
-import type { HoldingPerformancePoint, PerformanceSnapshots } from '@/core/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import './PortfolioPerformance.css';
+import { Tabs } from "@base-ui/react/tabs";
+import type {
+  HoldingPerformancePoint,
+  PerformanceSnapshots,
+} from "@/core/types";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import "./PortfolioPerformance.css";
 
-export type PerformanceRange = '1y' | '6m' | '3m' | '1m' | '1w';
-interface Props { performance: PerformanceSnapshots; range: PerformanceRange; onRangeChange: (range: PerformanceRange) => void }
-const ranges: Array<{ value: PerformanceRange; label: string; ariaLabel: string; days: number }> = [{ value: '1y', label: '1Y', ariaLabel: 'Last 1y', days: 365 }, { value: '6m', label: '6M', ariaLabel: 'Last 6m', days: 183 }, { value: '3m', label: '3M', ariaLabel: 'Last 3m', days: 92 }, { value: '1m', label: '1M', ariaLabel: 'Last 1m', days: 30 }, { value: '1w', label: '1W', ariaLabel: 'Last 1w', days: 7 }];
-const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
-const dateTime = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
-
-function PerformanceChart({ points, label }: { points: PerformanceSnapshots['portfolio']; label: string }): React.JSX.Element {
-  if (points.length < 2) return <div className="chart-empty">Hourly P&amp;L history will appear as new candles arrive after a trade is recorded.</div>;
-  const values = points.map((point) => point.profitLoss); const min = Math.min(0, ...values); const max = Math.max(0, ...values); const span = max - min || 1;
-  const coords = values.map((value, index) => `${(index / (values.length - 1)) * 600},${90 - ((value - min) / span) * 80}`).join(' '); const zeroY = 90 - ((0 - min) / span) * 80;
-  return <svg className="price-chart pnl-chart" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label={`Hourly portfolio profit and loss, ${label}`}><line x1="0" x2="600" y1={zeroY} y2={zeroY} stroke="#64748b" strokeDasharray="4 4"/><polyline points={coords} fill="none" stroke={values.at(-1)! >= 0 ? '#34d399' : '#fb7185'} strokeWidth="2" vectorEffect="non-scaling-stroke"/></svg>;
+export type PerformanceRange = "1y" | "6m" | "3m" | "1m" | "1w";
+interface Props {
+  performance: PerformanceSnapshots;
+  range: PerformanceRange;
+  onRangeChange: (range: PerformanceRange) => void;
 }
-function HoldingPulse({ symbol, points }: { symbol: string; points: HoldingPerformancePoint[] }): React.JSX.Element {
-  const ordered = [...points].sort((left, right) => left.timestamp - right.timestamp); if (ordered.length < 2) return <span className="holding-pulse-empty" aria-label={`${symbol} P&L history pending`}>—</span>;
-  const values = ordered.map((point) => point.profitLoss); const min = Math.min(0, ...values); const max = Math.max(0, ...values); const span = max - min || 1; const coords = values.map((value, index) => `${(index / (values.length - 1)) * 100},${90 - ((value - min) / span) * 80}`).join(' '); const zeroY = 90 - ((0 - min) / span) * 80;
-  return <svg className="holding-pulse-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} hourly profit and loss`}><line x1="0" x2="100" y1={zeroY} y2={zeroY} stroke="#cbd5e1" strokeDasharray="3 3"/><polyline points={coords} fill="none" stroke={values.at(-1)! >= 0 ? '#34a879' : '#df7078'} strokeWidth="3" vectorEffect="non-scaling-stroke"/></svg>;
+const ranges: Array<{
+  value: PerformanceRange;
+  label: string;
+  ariaLabel: string;
+  days: number;
+}> = [
+  { value: "1y", label: "1Y", ariaLabel: "Last 1y", days: 365 },
+  { value: "6m", label: "6M", ariaLabel: "Last 6m", days: 183 },
+  { value: "3m", label: "3M", ariaLabel: "Last 3m", days: 92 },
+  { value: "1m", label: "1M", ariaLabel: "Last 1m", days: 30 },
+  { value: "1w", label: "1W", ariaLabel: "Last 1w", days: 7 },
+];
+const money = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+});
+const dateTime = new Intl.DateTimeFormat("en-AU", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  hourCycle: "h23",
+});
+
+function PerformanceChart({
+  points,
+  label,
+}: {
+  points: PerformanceSnapshots["portfolio"];
+  label: string;
+}): React.JSX.Element {
+  if (points.length < 2)
+    return (
+      <div className="chart-empty">
+        Hourly P&amp;L history will appear as new candles arrive after a trade
+        is recorded.
+      </div>
+    );
+  const values = points.map((point) => point.profitLoss);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const span = max - min || 1;
+  const coords = values
+    .map(
+      (value, index) =>
+        `${(index / (values.length - 1)) * 600},${90 - ((value - min) / span) * 80}`,
+    )
+    .join(" ");
+  const zeroY = 90 - ((0 - min) / span) * 80;
+  return (
+    <svg
+      className="price-chart pnl-chart"
+      viewBox="0 0 600 100"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`Hourly portfolio profit and loss, ${label}`}
+    >
+      <line
+        x1="0"
+        x2="600"
+        y1={zeroY}
+        y2={zeroY}
+        stroke="#64748b"
+        strokeDasharray="4 4"
+      />
+      <polyline
+        points={coords}
+        fill="none"
+        stroke={values.at(-1)! >= 0 ? "#34d399" : "#fb7185"}
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
 }
-export default function PortfolioPerformance({ performance, range, onRangeChange }: Props): React.JSX.Element {
-  const latest = performance.portfolio.at(-1); const selected = ranges.find((item) => item.value === range) ?? ranges[3]; const cutoff = (latest?.timestamp ?? 0) - selected.days * 24 * 60 * 60_000; const portfolioPoints = performance.portfolio.filter((point) => point.timestamp >= cutoff);
-  const latestHoldings = new Map<string, HoldingPerformancePoint>(); const history = new Map<string, HoldingPerformancePoint[]>();
-  for (const point of performance.holdings) { latestHoldings.set(point.symbol, point); history.set(point.symbol, [...(history.get(point.symbol) ?? []), point]); }
-  return <Tabs.Root value={range} onValueChange={(value) => onRangeChange(value as PerformanceRange)} className="performance-tabs"><Card className="performance-card"><CardHeader className="performance-header"><div><p className="section-kicker">PERFORMANCE</p><CardTitle>Portfolio profit &amp; loss</CardTitle><CardDescription>Track portfolio performance without deposits masking trading returns.</CardDescription></div><Tabs.List className="timeframe-tabs" aria-label="Portfolio P&L timeframe">{ranges.map((item) => <Tabs.Tab key={item.value} value={item.value} aria-label={item.ariaLabel} className="timeframe-tab">{item.label}</Tabs.Tab>)}</Tabs.List></CardHeader><Tabs.Panel value={range} className="performance-panel-content"><CardContent className="performance-content"><div className="performance-metrics"><div className="performance-total"><small>CASH BALANCE</small><strong>{latest ? money.format(latest.cashBalance) : '—'}</strong></div><div className="performance-total"><small>P&L</small><strong className={latest && latest.profitLoss >= 0 ? 'positive' : 'negative'}>{latest ? money.format(latest.profitLoss) : '—'}</strong></div></div><PerformanceChart points={portfolioPoints} label={selected.ariaLabel}/>{portfolioPoints.length > 1 && <div className="chart-axis-labels"><span>{dateTime.format(portfolioPoints[0].timestamp)}</span><span>{dateTime.format(portfolioPoints.at(-1)!.timestamp)}</span></div>}<p className="chart-caption">{selected.label} · Each point is captured from cached hourly candle closes.</p><div className="holding-performance"><div className="holding-heading"><div><p className="section-kicker">POSITIONS</p><h3>HOLDING PERFORMANCE</h3></div><span>{latestHoldings.size} assets</span></div>{latestHoldings.size ? <div className="holding-table-wrap"><div className="holding-performance-head"><span>ASSET</span><span>UNITS</span><span>AVG COST / UNIT</span><span>MARKET VALUE</span><span>P&amp;L</span><span>TREND</span></div>{[...latestHoldings.values()].sort((left, right) => left.symbol.localeCompare(right.symbol)).map((point) => <div className="holding-performance-row" key={point.symbol}><strong>{point.symbol}</strong><span>{point.quantity}</span><span>{money.format(point.averageUnitPrice)}</span><span>{money.format(point.marketValue)}</span><strong className={point.profitLoss >= 0 ? 'positive' : 'negative'}>{money.format(point.profitLoss)}</strong><HoldingPulse symbol={point.symbol} points={(history.get(point.symbol) ?? []).filter((item) => item.timestamp >= cutoff)}/></div>)}</div> : <div className="chart-empty">Add a trade to see per-holding P&amp;L.</div>}</div></CardContent></Tabs.Panel></Card></Tabs.Root>;
+function HoldingPulse({
+  symbol,
+  points,
+}: {
+  symbol: string;
+  points: HoldingPerformancePoint[];
+}): React.JSX.Element {
+  const ordered = [...points].sort(
+    (left, right) => left.timestamp - right.timestamp,
+  );
+  if (ordered.length < 2)
+    return (
+      <span
+        className="holding-pulse-empty"
+        aria-label={`${symbol} P&L history pending`}
+      >
+        —
+      </span>
+    );
+  const values = ordered.map((point) => point.profitLoss);
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const span = max - min || 1;
+  const coords = values
+    .map(
+      (value, index) =>
+        `${(index / (values.length - 1)) * 100},${90 - ((value - min) / span) * 80}`,
+    )
+    .join(" ");
+  const zeroY = 90 - ((0 - min) / span) * 80;
+  return (
+    <svg
+      className="holding-pulse-chart"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={`${symbol} hourly profit and loss`}
+    >
+      <line
+        x1="0"
+        x2="100"
+        y1={zeroY}
+        y2={zeroY}
+        stroke="#cbd5e1"
+        strokeDasharray="3 3"
+      />
+      <polyline
+        points={coords}
+        fill="none"
+        stroke={values.at(-1)! >= 0 ? "#34a879" : "#df7078"}
+        strokeWidth="3"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+export default function PortfolioPerformance({
+  performance,
+  range,
+  onRangeChange,
+}: Props): React.JSX.Element {
+  const latest = performance.portfolio.at(-1);
+  const selected = ranges.find((item) => item.value === range) ?? ranges[3];
+  const cutoff = (latest?.timestamp ?? 0) - selected.days * 24 * 60 * 60_000;
+  const portfolioPoints = performance.portfolio.filter(
+    (point) => point.timestamp >= cutoff,
+  );
+  const latestHoldings = new Map<string, HoldingPerformancePoint>();
+  const history = new Map<string, HoldingPerformancePoint[]>();
+  for (const point of performance.holdings) {
+    latestHoldings.set(point.symbol, point);
+    history.set(point.symbol, [...(history.get(point.symbol) ?? []), point]);
+  }
+  return (
+    <Tabs.Root
+      value={range}
+      onValueChange={(value) => onRangeChange(value as PerformanceRange)}
+      className="performance-tabs"
+    >
+      <Card className="performance-card">
+        <CardHeader className="performance-header">
+          <div>
+            <p className="section-kicker">PERFORMANCE</p>
+            <CardTitle>Portfolio profit &amp; loss</CardTitle>
+            <CardDescription>
+              Track portfolio performance without deposits masking trading
+              returns.
+            </CardDescription>
+          </div>
+          <Tabs.List
+            className="timeframe-tabs"
+            aria-label="Portfolio P&L timeframe"
+          >
+            {ranges.map((item) => (
+              <Tabs.Tab
+                key={item.value}
+                value={item.value}
+                aria-label={item.ariaLabel}
+                className="timeframe-tab"
+              >
+                {item.label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </CardHeader>
+        <Tabs.Panel value={range} className="performance-panel-content">
+          <CardContent className="performance-content">
+            <div className="performance-metrics">
+              <div className="performance-total">
+                <small>CASH BALANCE</small>
+                <strong>
+                  {latest ? money.format(latest.cashBalance) : "—"}
+                </strong>
+              </div>
+              <div className="performance-total">
+                <small>P&L</small>
+                <strong
+                  className={
+                    latest && latest.profitLoss >= 0 ? "positive" : "negative"
+                  }
+                >
+                  {latest ? money.format(latest.profitLoss) : "—"}
+                </strong>
+              </div>
+            </div>
+            <PerformanceChart
+              points={portfolioPoints}
+              label={selected.ariaLabel}
+            />
+            {portfolioPoints.length > 1 && (
+              <div className="chart-axis-labels">
+                <span>{dateTime.format(portfolioPoints[0].timestamp)}</span>
+                <span>
+                  {dateTime.format(portfolioPoints.at(-1)!.timestamp)}
+                </span>
+              </div>
+            )}
+            <p className="chart-caption">
+              {selected.label} · Each point is captured from cached hourly
+              candle closes.
+            </p>
+            <div className="holding-performance">
+              <div className="holding-heading">
+                <div>
+                  <p className="section-kicker">POSITIONS</p>
+                  <h3>HOLDING PERFORMANCE</h3>
+                </div>
+                <span>{latestHoldings.size} assets</span>
+              </div>
+              {latestHoldings.size ? (
+                <div className="holding-table-wrap">
+                  <div className="holding-performance-head">
+                    <span>ASSET</span>
+                    <span>UNITS</span>
+                    <span>AVG COST / UNIT</span>
+                    <span>MARKET VALUE</span>
+                    <span>P&amp;L</span>
+                    <span>TREND</span>
+                  </div>
+                  {[...latestHoldings.values()]
+                    .sort((left, right) =>
+                      left.symbol.localeCompare(right.symbol),
+                    )
+                    .map((point) => (
+                      <div
+                        className="holding-performance-row"
+                        key={point.symbol}
+                      >
+                        <strong>{point.symbol}</strong>
+                        <span>{point.quantity}</span>
+                        <span>{money.format(point.averageUnitPrice)}</span>
+                        <span>{money.format(point.marketValue)}</span>
+                        <strong
+                          className={
+                            point.profitLoss >= 0 ? "positive" : "negative"
+                          }
+                        >
+                          {money.format(point.profitLoss)}
+                        </strong>
+                        <HoldingPulse
+                          symbol={point.symbol}
+                          points={(history.get(point.symbol) ?? []).filter(
+                            (item) => item.timestamp >= cutoff,
+                          )}
+                        />
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="chart-empty">
+                  Add a trade to see per-holding P&amp;L.
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Tabs.Panel>
+      </Card>
+    </Tabs.Root>
+  );
 }

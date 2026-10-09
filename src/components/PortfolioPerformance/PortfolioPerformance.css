@@ -1,37 +1,176 @@
 @layer component-styles {
-.performance-section { margin-top: 15px; }
-.performance-tabs { min-width: 0; }
-.performance-card { overflow: hidden; }
-.performance-header { display: flex; flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 22px; padding: 20px 21px 16px; }
-.performance-header h2 { margin: 0; color: #202b3a; font-size: 19px; font-weight: 650; }
-.performance-header .text-sm { max-width: 560px; margin-top: 7px; }
-.timeframe-tabs { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 3px; padding: 3px; border: 1px solid #e9edf3; border-radius: 8px; background: #f7f9fc; }
-.timeframe-tab { min-height: 29px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: #748095; font-size: 11px; font-weight: 600; transition: .15s; }
-.timeframe-tab:hover { color: #33435a; }
-.timeframe-tab[data-active] { background: white; color: #2e5fbf; box-shadow: 0 1px 3px #1c2b401f; }
-.performance-panel-content { outline: none; }
-.performance-content { padding: 0 21px 20px; }
-.performance-metrics { display: flex; gap: 30px; padding: 12px 0 11px; border-top: 1px solid #eef1f5; }
-.performance-total { display: flex; flex-direction: column; gap: 5px; }
-.performance-total small { color: #8a95a5; font-size: 10px; font-weight: 700; letter-spacing: .6px; }
-.performance-total strong { color: #26344a; font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.pnl-chart { height: 185px; padding: 4px 0; }
-.chart-axis-labels { display: flex; justify-content: space-between; margin-top: 6px; color: #98a2b1; font-size: 11px; }
-.holding-performance { margin-top: 21px; padding-top: 16px; border-top: 1px solid #e9edf3; }
-.holding-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 10px; }
-.holding-heading .section-kicker { margin-bottom: 4px; }
-.holding-heading h3 { margin: 0; color: #27354a; font-size: 15px; font-weight: 650; }
-.holding-heading > span { color: #8b96a6; font-size: 11px; }
-.holding-performance-head, .holding-performance-row { display: grid; grid-template-columns: minmax(115px, 1.3fr) .55fr .9fr 1fr .8fr minmax(95px, 1fr); align-items: center; gap: 10px; min-width: 750px; }
-.holding-performance-head { min-height: 31px; padding: 0 10px; border-radius: 5px; background: #f7f9fc; color: #8b96a6; font-size: 10px; font-weight: 750; letter-spacing: .55px; }
-.holding-performance-row { min-height: 55px; padding: 0 10px; border-bottom: 1px solid #eef1f5; color: #566378; font-size: 12px; font-variant-numeric: tabular-nums; }
-.holding-performance-row > strong:first-child { color: #28364b; font-weight: 650; }
-.holding-pulse-chart { width: 100%; height: 31px; }
-.holding-pulse-empty { color: #a2aab6; }
+  .performance-section {
+    margin-top: 15px;
+  }
+  .performance-tabs {
+    min-width: 0;
+  }
+  .performance-card {
+    overflow: hidden;
+  }
+  .performance-header {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 22px;
+    padding: 20px 21px 16px;
+  }
+  .performance-header h2 {
+    margin: 0;
+    color: #202b3a;
+    font-size: 19px;
+    font-weight: 650;
+  }
+  .performance-header .text-sm {
+    max-width: 560px;
+    margin-top: 7px;
+  }
+  .timeframe-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid #e9edf3;
+    border-radius: 8px;
+    background: #f7f9fc;
+  }
+  .timeframe-tab {
+    min-height: 29px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #748095;
+    font-size: 11px;
+    font-weight: 600;
+    transition: 0.15s;
+  }
+  .timeframe-tab:hover {
+    color: #33435a;
+  }
+  .timeframe-tab[data-active] {
+    background: white;
+    color: #2e5fbf;
+    box-shadow: 0 1px 3px #1c2b401f;
+  }
+  .performance-panel-content {
+    outline: none;
+  }
+  .performance-content {
+    padding: 0 21px 20px;
+  }
+  .performance-metrics {
+    display: flex;
+    gap: 30px;
+    padding: 12px 0 11px;
+    border-top: 1px solid #eef1f5;
+  }
+  .performance-total {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .performance-total small {
+    color: #8a95a5;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+  }
+  .performance-total strong {
+    color: #26344a;
+    font-size: 19px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+  .pnl-chart {
+    height: 185px;
+    padding: 4px 0;
+  }
+  .chart-axis-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    color: #98a2b1;
+    font-size: 11px;
+  }
+  .holding-performance {
+    margin-top: 21px;
+    padding-top: 16px;
+    border-top: 1px solid #e9edf3;
+  }
+  .holding-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    margin-bottom: 10px;
+  }
+  .holding-heading .section-kicker {
+    margin-bottom: 4px;
+  }
+  .holding-heading h3 {
+    margin: 0;
+    color: #27354a;
+    font-size: 15px;
+    font-weight: 650;
+  }
+  .holding-heading > span {
+    color: #8b96a6;
+    font-size: 11px;
+  }
+  .holding-performance-head,
+  .holding-performance-row {
+    display: grid;
+    grid-template-columns: minmax(115px, 1.3fr) 0.55fr 0.9fr 1fr 0.8fr minmax(
+        95px,
+        1fr
+      );
+    align-items: center;
+    gap: 10px;
+    min-width: 750px;
+  }
+  .holding-performance-head {
+    min-height: 31px;
+    padding: 0 10px;
+    border-radius: 5px;
+    background: #f7f9fc;
+    color: #8b96a6;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.55px;
+  }
+  .holding-performance-row {
+    min-height: 55px;
+    padding: 0 10px;
+    border-bottom: 1px solid #eef1f5;
+    color: #566378;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .holding-performance-row > strong:first-child {
+    color: #28364b;
+    font-weight: 650;
+  }
+  .holding-pulse-chart {
+    width: 100%;
+    height: 31px;
+  }
+  .holding-pulse-empty {
+    color: #a2aab6;
+  }
 
-@media (max-width: 780px) {
-  .performance-header { flex-direction: column; gap: 12px; }
-  .timeframe-tabs { width: 100%; }
-  .timeframe-tab { flex: 1; padding: 0 5px; }
-}
+  @media (max-width: 780px) {
+    .performance-header {
+      flex-direction: column;
+      gap: 12px;
+    }
+    .timeframe-tabs {
+      width: 100%;
+    }
+    .timeframe-tab {
+      flex: 1;
+      padding: 0 5px;
+    }
+  }
 }

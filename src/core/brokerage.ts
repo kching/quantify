@@ -1,4 +1,5 @@
-const roundCurrency = (amount: number): number => Math.round(amount * 100) / 100;
+const roundCurrency = (amount: number): number =>
+  Math.round(amount * 100) / 100;
 
 export function calculateBrokerage(tradeValue: number): number {
   if (!Number.isFinite(tradeValue) || tradeValue <= 0) return 0;

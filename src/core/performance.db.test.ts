@@ -1,21 +1,30 @@
-import { afterAll, describe, expect, it, mock } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { Candle } from './types';
+import { afterAll, describe, expect, it, mock } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Candle } from "./types";
 
-mock.module('server-only', () => ({}));
-const databaseDirectory = mkdtempSync(join(tmpdir(), 'quantify-performance-'));
-process.env.QUANTIFY_DB_PATH = join(databaseDirectory, 'test.sqlite');
+mock.module("server-only", () => ({}));
+const databaseDirectory = mkdtempSync(join(tmpdir(), "quantify-performance-"));
+process.env.QUANTIFY_DB_PATH = join(databaseDirectory, "test.sqlite");
 
-const database = await import('./db');
-const { capturePortfolioPerformance } = await import('./performance.service');
+const database = await import("./db");
+const { capturePortfolioPerformance } = await import("./performance.service");
 const HOUR = 60 * 60 * 1000;
 const now = Date.now();
 const tradeTime = now - 5 * HOUR;
 
 function candle(symbol: string, timestamp: number, close: number): Candle {
-  return { symbol, interval: '1h', timestamp, open: close, high: close, low: close, close, volume: 1_000 };
+  return {
+    symbol,
+    interval: "1h",
+    timestamp,
+    open: close,
+    high: close,
+    low: close,
+    close,
+    volume: 1_000,
+  };
 }
 
 afterAll(async () => {
@@ -23,167 +32,456 @@ afterAll(async () => {
   rmSync(databaseDirectory, { recursive: true, force: true });
 });
 
-describe('trade and performance persistence', () => {
-  it('persists holding strategies independently for the same ticker in different portfolios', async () => {
-    const firstPortfolio = await database.createPortfolio('Klinger watchlist');
-    const secondPortfolio = await database.createPortfolio('RSI watchlist');
-    await database.addHolding(firstPortfolio.id, 'TEST.AX');
-    await database.addHolding(secondPortfolio.id, 'TEST.AX');
+describe("trade and performance persistence", () => {
+  it("persists holding strategies independently for the same ticker in different portfolios", async () => {
+    const firstPortfolio = await database.createPortfolio("Klinger watchlist");
+    const secondPortfolio = await database.createPortfolio("RSI watchlist");
+    await database.addHolding(firstPortfolio.id, "TEST.AX");
+    await database.addHolding(secondPortfolio.id, "TEST.AX");
 
-    const firstStrategy = await database.saveHoldingStrategy({ portfolioId: firstPortfolio.id, symbol: 'TEST.AX', label: 'Klinger trend', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } });
-    expect(firstStrategy).toMatchObject({
-      id: expect.any(Number), portfolioId: firstPortfolio.id, symbol: 'TEST.AX', label: 'Klinger trend', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
+    const firstStrategy = await database.saveHoldingStrategy({
+      portfolioId: firstPortfolio.id,
+      symbol: "TEST.AX",
+      label: "Klinger trend",
+      name: "klinger-oscillator",
+      params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
     });
-    await database.saveHoldingStrategy({ portfolioId: firstPortfolio.id, symbol: 'TEST.AX', label: 'RSI reversal', name: 'rsi-14', params: { period: 7 } });
-    await database.saveHoldingStrategy({ portfolioId: secondPortfolio.id, symbol: 'TEST.AX', label: 'RSI reversal', name: 'rsi-14', params: { period: 7 } });
+    expect(firstStrategy).toMatchObject({
+      id: expect.any(Number),
+      portfolioId: firstPortfolio.id,
+      symbol: "TEST.AX",
+      label: "Klinger trend",
+      name: "klinger-oscillator",
+      params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
+    });
+    await database.saveHoldingStrategy({
+      portfolioId: firstPortfolio.id,
+      symbol: "TEST.AX",
+      label: "RSI reversal",
+      name: "rsi-14",
+      params: { period: 7 },
+    });
+    await database.saveHoldingStrategy({
+      portfolioId: secondPortfolio.id,
+      symbol: "TEST.AX",
+      label: "RSI reversal",
+      name: "rsi-14",
+      params: { period: 7 },
+    });
 
-    expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toMatchObject({ label: 'Klinger trend', name: 'klinger-oscillator', params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 } });
-    expect(await database.listHoldingStrategies(firstPortfolio.id)).toHaveLength(2);
-    expect(await database.listHoldingStrategies(secondPortfolio.id)).toMatchObject([{ id: expect.any(Number), portfolioId: secondPortfolio.id, symbol: 'TEST.AX', label: 'RSI reversal', name: 'rsi-14', params: { period: 7 } }]);
-    const strategyToDelete = (await database.listHoldingStrategies(firstPortfolio.id)).find((strategy) => strategy.label === 'Klinger trend');
-    if (!strategyToDelete) throw new Error('Expected strategy to delete.');
-    await database.removeHoldingStrategy(firstPortfolio.id, strategyToDelete.id, 'TEST.AX');
-    expect(await database.listHoldingStrategies(firstPortfolio.id)).toHaveLength(1);
+    expect(
+      await database.getHoldingStrategy(firstPortfolio.id, "TEST.AX"),
+    ).toMatchObject({
+      label: "Klinger trend",
+      name: "klinger-oscillator",
+      params: { fastPeriod: 20, slowPeriod: 40, signalPeriod: 10 },
+    });
+    expect(
+      await database.listHoldingStrategies(firstPortfolio.id),
+    ).toHaveLength(2);
+    expect(
+      await database.listHoldingStrategies(secondPortfolio.id),
+    ).toMatchObject([
+      {
+        id: expect.any(Number),
+        portfolioId: secondPortfolio.id,
+        symbol: "TEST.AX",
+        label: "RSI reversal",
+        name: "rsi-14",
+        params: { period: 7 },
+      },
+    ]);
+    const strategyToDelete = (
+      await database.listHoldingStrategies(firstPortfolio.id)
+    ).find((strategy) => strategy.label === "Klinger trend");
+    if (!strategyToDelete) throw new Error("Expected strategy to delete.");
+    await database.removeHoldingStrategy(
+      firstPortfolio.id,
+      strategyToDelete.id,
+      "TEST.AX",
+    );
+    expect(
+      await database.listHoldingStrategies(firstPortfolio.id),
+    ).toHaveLength(1);
 
-    await database.removeHolding(firstPortfolio.id, 'TEST.AX');
-    expect(await database.getHoldingStrategy(firstPortfolio.id, 'TEST.AX')).toBeNull();
-    expect(await database.getHoldingStrategy(secondPortfolio.id, 'TEST.AX')).not.toBeNull();
+    await database.removeHolding(firstPortfolio.id, "TEST.AX");
+    expect(
+      await database.getHoldingStrategy(firstPortfolio.id, "TEST.AX"),
+    ).toBeNull();
+    expect(
+      await database.getHoldingStrategy(secondPortfolio.id, "TEST.AX"),
+    ).not.toBeNull();
   });
 
-  it('adds a missing holding before saving its strategy', async () => {
-    const portfolio = await database.createPortfolio('Auto-add strategy holding');
+  it("adds a missing holding before saving its strategy", async () => {
+    const portfolio = await database.createPortfolio(
+      "Auto-add strategy holding",
+    );
 
-    const strategy = await database.saveHoldingStrategy({ portfolioId: portfolio.id, symbol: 'NEW.AX', label: 'New signal', name: 'rsi-14', params: { period: 14 } });
+    const strategy = await database.saveHoldingStrategy({
+      portfolioId: portfolio.id,
+      symbol: "NEW.AX",
+      label: "New signal",
+      name: "rsi-14",
+      params: { period: 14 },
+    });
 
-    expect(strategy).toMatchObject({ portfolioId: portfolio.id, symbol: 'NEW.AX' });
-    expect((await database.listPortfolios()).find((item) => item.id === portfolio.id)?.holdings).toEqual([{ symbol: 'NEW.AX', addedAt: expect.any(Number) }]);
+    expect(strategy).toMatchObject({
+      portfolioId: portfolio.id,
+      symbol: "NEW.AX",
+    });
+    expect(
+      (await database.listPortfolios()).find((item) => item.id === portfolio.id)
+        ?.holdings,
+    ).toEqual([{ symbol: "NEW.AX", addedAt: expect.any(Number) }]);
   });
 
-  it('records signal state timestamps only when the state changes', async () => {
-    const portfolio = await database.createPortfolio('Signal state history');
-    await database.addHolding(portfolio.id, 'STATE.AX');
-    const strategy = await database.saveHoldingStrategy({ portfolioId: portfolio.id, symbol: 'STATE.AX', label: 'State tracker', name: 'rsi-14', params: { period: 14 } });
+  it("records signal state timestamps only when the state changes", async () => {
+    const portfolio = await database.createPortfolio("Signal state history");
+    await database.addHolding(portfolio.id, "STATE.AX");
+    const strategy = await database.saveHoldingStrategy({
+      portfolioId: portfolio.id,
+      symbol: "STATE.AX",
+      label: "State tracker",
+      name: "rsi-14",
+      params: { period: 14 },
+    });
 
-    expect(await database.recordSignalState(portfolio.id, strategy.id, 'BUY', 'admin', 1_000)).toBe(1_000);
-    expect(await database.recordSignalState(portfolio.id, strategy.id, 'BUY', 'admin', 2_000)).toBe(1_000);
-    expect(await database.recordSignalState(portfolio.id, strategy.id, 'HOLD', 'admin', 3_000)).toBe(3_000);
-    expect(await database.getHoldingStrategy(portfolio.id, 'STATE.AX')).toMatchObject({ lastSignal: 'HOLD', signalUpdatedAt: 3_000 });
+    expect(
+      await database.recordSignalState(
+        portfolio.id,
+        strategy.id,
+        "BUY",
+        "admin",
+        1_000,
+      ),
+    ).toBe(1_000);
+    expect(
+      await database.recordSignalState(
+        portfolio.id,
+        strategy.id,
+        "BUY",
+        "admin",
+        2_000,
+      ),
+    ).toBe(1_000);
+    expect(
+      await database.recordSignalState(
+        portfolio.id,
+        strategy.id,
+        "HOLD",
+        "admin",
+        3_000,
+      ),
+    ).toBe(3_000);
+    expect(
+      await database.getHoldingStrategy(portfolio.id, "STATE.AX"),
+    ).toMatchObject({ lastSignal: "HOLD", signalUpdatedAt: 3_000 });
   });
 
-  it('records a buy and sell ledger, prevents overselling, and captures hourly snapshots', async () => {
+  it("records a buy and sell ledger, prevents overselling, and captures hourly snapshots", async () => {
     const [portfolio] = await database.listPortfolios();
     expect(portfolio.holdings).toHaveLength(5);
 
-    await database.recordTrade({ portfolioId: portfolio.id, symbol: 'MQG.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: tradeTime });
-    await expect(database.recordTrade({ portfolioId: portfolio.id, symbol: 'MQG.AX', side: 'SELL', quantity: 1, price: 120, brokerage: 5, timestamp: tradeTime - HOUR })).rejects.toThrow('Sell quantity exceeds the units held at the selected trade time.');
-    await database.recordTrade({ portfolioId: portfolio.id, symbol: 'MQG.AX', side: 'SELL', quantity: 2, price: 120, brokerage: 5, timestamp: tradeTime + 2 * HOUR });
-    await database.recordCashTransaction({ portfolioId: portfolio.id, type: 'DEPOSIT', amount: 1_000, timestamp: tradeTime - 2 * HOUR, note: 'Starting capital' });
-    await database.recordCashTransaction({ portfolioId: portfolio.id, type: 'WITHDRAWAL', amount: 100, timestamp: tradeTime + 3 * HOUR, note: 'Transfer out' });
+    await database.recordTrade({
+      portfolioId: portfolio.id,
+      symbol: "MQG.AX",
+      side: "BUY",
+      quantity: 10,
+      price: 100,
+      brokerage: 5,
+      timestamp: tradeTime,
+    });
+    await expect(
+      database.recordTrade({
+        portfolioId: portfolio.id,
+        symbol: "MQG.AX",
+        side: "SELL",
+        quantity: 1,
+        price: 120,
+        brokerage: 5,
+        timestamp: tradeTime - HOUR,
+      }),
+    ).rejects.toThrow(
+      "Sell quantity exceeds the units held at the selected trade time.",
+    );
+    await database.recordTrade({
+      portfolioId: portfolio.id,
+      symbol: "MQG.AX",
+      side: "SELL",
+      quantity: 2,
+      price: 120,
+      brokerage: 5,
+      timestamp: tradeTime + 2 * HOUR,
+    });
+    await database.recordCashTransaction({
+      portfolioId: portfolio.id,
+      type: "DEPOSIT",
+      amount: 1_000,
+      timestamp: tradeTime - 2 * HOUR,
+      note: "Starting capital",
+    });
+    await database.recordCashTransaction({
+      portfolioId: portfolio.id,
+      type: "WITHDRAWAL",
+      amount: 100,
+      timestamp: tradeTime + 3 * HOUR,
+      note: "Transfer out",
+    });
 
-    await database.saveCandles('1h', [
-      candle('MQG.AX', tradeTime - HOUR, 100),
-      candle('MQG.AX', tradeTime, 105),
-      candle('MQG.AX', tradeTime + HOUR, 120),
-      candle('MQG.AX', tradeTime + 2 * HOUR, 110),
-      candle('MQG.AX', now + HOUR, 999),
+    await database.saveCandles("1h", [
+      candle("MQG.AX", tradeTime - HOUR, 100),
+      candle("MQG.AX", tradeTime, 105),
+      candle("MQG.AX", tradeTime + HOUR, 120),
+      candle("MQG.AX", tradeTime + 2 * HOUR, 110),
+      candle("MQG.AX", now + HOUR, 999),
     ]);
     await capturePortfolioPerformance(portfolio.id);
 
     const storedTrades = await database.listTrades(portfolio.id);
-    expect(storedTrades.map((trade) => trade.side)).toEqual(['BUY', 'SELL']);
+    expect(storedTrades.map((trade) => trade.side)).toEqual(["BUY", "SELL"]);
     const performance = await database.listPerformance(portfolio.id);
     expect(performance.holdings).toHaveLength(4);
-    expect(performance.holdings.at(-1)).toMatchObject({ symbol: 'MQG.AX', quantity: 8, marketPrice: 110, averageUnitPrice: 100.5, marketValue: 880, profitLoss: 110 });
-    expect(performance.portfolio.at(-1)).toMatchObject({ cashBalance: 130, marketValue: 880, totalValue: 1_010, contributedCapital: 900, profitLoss: 110 });
+    expect(performance.holdings.at(-1)).toMatchObject({
+      symbol: "MQG.AX",
+      quantity: 8,
+      marketPrice: 110,
+      averageUnitPrice: 100.5,
+      marketValue: 880,
+      profitLoss: 110,
+    });
+    expect(performance.portfolio.at(-1)).toMatchObject({
+      cashBalance: 130,
+      marketValue: 880,
+      totalValue: 1_010,
+      contributedCapital: 900,
+      profitLoss: 110,
+    });
     expect(await database.listCashTransactions(portfolio.id)).toHaveLength(2);
-    expect(performance.holdings.some((point) => point.marketPrice === 999)).toBe(false);
+    expect(
+      performance.holdings.some((point) => point.marketPrice === 999),
+    ).toBe(false);
   });
 
-  it('returns one year of holding snapshots for selectable pulse-chart ranges', async () => {
-    const portfolio = await database.createPortfolio('Holding history window');
+  it("returns one year of holding snapshots for selectable pulse-chart ranges", async () => {
+    const portfolio = await database.createPortfolio("Holding history window");
     const inRangeTimestamp = now - 180 * 24 * HOUR;
     const outOfRangeTimestamp = now - 400 * 24 * HOUR;
     await database.savePerformanceSnapshots(portfolio.id, {
       holdings: [
-        { symbol: 'AAA.AX', timestamp: inRangeTimestamp, quantity: 1, marketPrice: 100, averageUnitPrice: 90, marketValue: 100, profitLoss: 10 },
-        { symbol: 'AAA.AX', timestamp: outOfRangeTimestamp, quantity: 1, marketPrice: 90, averageUnitPrice: 90, marketValue: 90, profitLoss: 0 },
+        {
+          symbol: "AAA.AX",
+          timestamp: inRangeTimestamp,
+          quantity: 1,
+          marketPrice: 100,
+          averageUnitPrice: 90,
+          marketValue: 100,
+          profitLoss: 10,
+        },
+        {
+          symbol: "AAA.AX",
+          timestamp: outOfRangeTimestamp,
+          quantity: 1,
+          marketPrice: 90,
+          averageUnitPrice: 90,
+          marketValue: 90,
+          profitLoss: 0,
+        },
       ],
       portfolio: [],
     });
 
     const performance = await database.listPerformance(portfolio.id);
-    expect(performance.holdings.map((point) => point.timestamp)).toContain(inRangeTimestamp);
-    expect(performance.holdings.map((point) => point.timestamp)).not.toContain(outOfRangeTimestamp);
+    expect(performance.holdings.map((point) => point.timestamp)).toContain(
+      inRangeTimestamp,
+    );
+    expect(performance.holdings.map((point) => point.timestamp)).not.toContain(
+      outOfRangeTimestamp,
+    );
   });
 
-  it('evicts hourly data after 12 months and daily candles after 10 years while preserving ledgers', async () => {
-    const portfolio = await database.createPortfolio('Time-series retention');
+  it("evicts hourly data after 12 months and daily candles after 10 years while preserving ledgers", async () => {
+    const portfolio = await database.createPortfolio("Time-series retention");
     const oldTimestamp = now - 400 * 24 * HOUR;
     const currentTimestamp = now - HOUR;
-    await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: oldTimestamp });
-    await database.recordCashTransaction({ portfolioId: portfolio.id, type: 'DEPOSIT', amount: 2_000, timestamp: oldTimestamp - HOUR, note: 'Original funding' });
-    await database.saveCandles('1h', [
-      candle('AAA.AX', oldTimestamp, 90),
-      candle('AAA.AX', currentTimestamp, 120),
+    await database.recordTrade({
+      portfolioId: portfolio.id,
+      symbol: "AAA.AX",
+      side: "BUY",
+      quantity: 10,
+      price: 100,
+      brokerage: 5,
+      timestamp: oldTimestamp,
+    });
+    await database.recordCashTransaction({
+      portfolioId: portfolio.id,
+      type: "DEPOSIT",
+      amount: 2_000,
+      timestamp: oldTimestamp - HOUR,
+      note: "Original funding",
+    });
+    await database.saveCandles("1h", [
+      candle("AAA.AX", oldTimestamp, 90),
+      candle("AAA.AX", currentTimestamp, 120),
     ]);
-    await database.saveCandles('1d', [
-      { ...candle('AAA.AX', now - 11 * 365 * 24 * HOUR, 80), interval: '1d' },
-      { ...candle('AAA.AX', now - 2 * 365 * 24 * HOUR, 100), interval: '1d' },
+    await database.saveCandles("1d", [
+      { ...candle("AAA.AX", now - 11 * 365 * 24 * HOUR, 80), interval: "1d" },
+      { ...candle("AAA.AX", now - 2 * 365 * 24 * HOUR, 100), interval: "1d" },
     ]);
     await database.savePerformanceSnapshots(portfolio.id, {
       holdings: [
-        { symbol: 'AAA.AX', timestamp: oldTimestamp, quantity: 10, marketPrice: 90, averageUnitPrice: 100.5, marketValue: 900, profitLoss: -115 },
-        { symbol: 'AAA.AX', timestamp: currentTimestamp, quantity: 10, marketPrice: 120, averageUnitPrice: 100.5, marketValue: 1_200, profitLoss: 185 },
+        {
+          symbol: "AAA.AX",
+          timestamp: oldTimestamp,
+          quantity: 10,
+          marketPrice: 90,
+          averageUnitPrice: 100.5,
+          marketValue: 900,
+          profitLoss: -115,
+        },
+        {
+          symbol: "AAA.AX",
+          timestamp: currentTimestamp,
+          quantity: 10,
+          marketPrice: 120,
+          averageUnitPrice: 100.5,
+          marketValue: 1_200,
+          profitLoss: 185,
+        },
       ],
       portfolio: [
-        { timestamp: oldTimestamp, cashBalance: 995, marketValue: 900, totalValue: 1_895, contributedCapital: 2_000, profitLoss: -105 },
-        { timestamp: currentTimestamp, cashBalance: 995, marketValue: 1_200, totalValue: 2_195, contributedCapital: 2_000, profitLoss: 195 },
+        {
+          timestamp: oldTimestamp,
+          cashBalance: 995,
+          marketValue: 900,
+          totalValue: 1_895,
+          contributedCapital: 2_000,
+          profitLoss: -105,
+        },
+        {
+          timestamp: currentTimestamp,
+          cashBalance: 995,
+          marketValue: 1_200,
+          totalValue: 2_195,
+          contributedCapital: 2_000,
+          profitLoss: 195,
+        },
       ],
     });
 
     await database.evictExpiredTimeSeriesData(now);
 
-    expect((await database.getCandles('AAA.AX', '1h')).map((row) => row.timestamp)).toEqual([currentTimestamp]);
-    expect((await database.getCandles('AAA.AX', '1d')).map((row) => row.timestamp)).toEqual([now - 2 * 365 * 24 * HOUR]);
-    expect((await database.listPerformance(portfolio.id)).holdings.map((point) => point.timestamp)).toEqual([currentTimestamp]);
+    expect(
+      (await database.getCandles("AAA.AX", "1h")).map((row) => row.timestamp),
+    ).toEqual([currentTimestamp]);
+    expect(
+      (await database.getCandles("AAA.AX", "1d")).map((row) => row.timestamp),
+    ).toEqual([now - 2 * 365 * 24 * HOUR]);
+    expect(
+      (await database.listPerformance(portfolio.id)).holdings.map(
+        (point) => point.timestamp,
+      ),
+    ).toEqual([currentTimestamp]);
     expect(await database.listTrades(portfolio.id)).toHaveLength(1);
     expect(await database.listCashTransactions(portfolio.id)).toHaveLength(1);
-    expect((await database.listPortfolios()).find((row) => row.id === portfolio.id)?.holdings.map((row) => row.symbol)).toContain('AAA.AX');
+    expect(
+      (await database.listPortfolios())
+        .find((row) => row.id === portfolio.id)
+        ?.holdings.map((row) => row.symbol),
+    ).toContain("AAA.AX");
 
     await capturePortfolioPerformance(portfolio.id);
     const performance = await database.listPerformance(portfolio.id);
-    expect(performance.holdings.at(-1)).toMatchObject({ quantity: 10, marketPrice: 120, profitLoss: 195 });
-    expect(performance.portfolio.at(-1)).toMatchObject({ cashBalance: 995, totalValue: 2_195, contributedCapital: 2_000, profitLoss: 195 });
+    expect(performance.holdings.at(-1)).toMatchObject({
+      quantity: 10,
+      marketPrice: 120,
+      profitLoss: 195,
+    });
+    expect(performance.portfolio.at(-1)).toMatchObject({
+      cashBalance: 995,
+      totalValue: 2_195,
+      contributedCapital: 2_000,
+      profitLoss: 195,
+    });
   });
 
-  it('prevents deleting a buy that supports later sells and clears snapshots after a valid deletion', async () => {
-    const portfolio = await database.createPortfolio('Trade deletion');
-    const buy = await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'BUY', quantity: 10, price: 100, brokerage: 5, timestamp: tradeTime });
-    const sell = await database.recordTrade({ portfolioId: portfolio.id, symbol: 'AAA.AX', side: 'SELL', quantity: 2, price: 120, brokerage: 5, timestamp: tradeTime + HOUR });
-    await expect(database.deletePortfolioTrade(portfolio.id, buy.id)).rejects.toThrow('later sell would exceed the remaining position');
+  it("prevents deleting a buy that supports later sells and clears snapshots after a valid deletion", async () => {
+    const portfolio = await database.createPortfolio("Trade deletion");
+    const buy = await database.recordTrade({
+      portfolioId: portfolio.id,
+      symbol: "AAA.AX",
+      side: "BUY",
+      quantity: 10,
+      price: 100,
+      brokerage: 5,
+      timestamp: tradeTime,
+    });
+    const sell = await database.recordTrade({
+      portfolioId: portfolio.id,
+      symbol: "AAA.AX",
+      side: "SELL",
+      quantity: 2,
+      price: 120,
+      brokerage: 5,
+      timestamp: tradeTime + HOUR,
+    });
+    await expect(
+      database.deletePortfolioTrade(portfolio.id, buy.id),
+    ).rejects.toThrow("later sell would exceed the remaining position");
     await database.savePerformanceSnapshots(portfolio.id, {
-      holdings: [{ symbol: 'AAA.AX', timestamp: now - HOUR, quantity: 10, marketPrice: 100, averageUnitPrice: 100.5, marketValue: 1_000, profitLoss: -5 }],
-      portfolio: [{ timestamp: now - HOUR, cashBalance: -1_005, marketValue: 1_000, totalValue: -5, contributedCapital: 0, profitLoss: -5 }],
+      holdings: [
+        {
+          symbol: "AAA.AX",
+          timestamp: now - HOUR,
+          quantity: 10,
+          marketPrice: 100,
+          averageUnitPrice: 100.5,
+          marketValue: 1_000,
+          profitLoss: -5,
+        },
+      ],
+      portfolio: [
+        {
+          timestamp: now - HOUR,
+          cashBalance: -1_005,
+          marketValue: 1_000,
+          totalValue: -5,
+          contributedCapital: 0,
+          profitLoss: -5,
+        },
+      ],
     });
 
-    expect(await database.deletePortfolioTrade(portfolio.id, sell.id)).toMatchObject({ id: sell.id, side: 'SELL' });
+    expect(
+      await database.deletePortfolioTrade(portfolio.id, sell.id),
+    ).toMatchObject({ id: sell.id, side: "SELL" });
     expect(await database.listTrades(portfolio.id)).toHaveLength(1);
-    expect(await database.listPerformance(portfolio.id)).toEqual({ holdings: [], portfolio: [] });
+    expect(await database.listPerformance(portfolio.id)).toEqual({
+      holdings: [],
+      portfolio: [],
+    });
   });
 
-  it('serves six newest trades per page and applies ticker filters before pagination', async () => {
-    const portfolio = await database.createPortfolio('Trade pagination');
+  it("serves six newest trades per page and applies ticker filters before pagination", async () => {
+    const portfolio = await database.createPortfolio("Trade pagination");
     const insertedTrades = [];
     for (let index = 0; index < 8; index += 1) {
-      insertedTrades.push(await database.recordTrade({
-        portfolioId: portfolio.id, symbol: index < 3 ? 'AAA.AX' : 'BBB.AX', side: 'BUY', quantity: 1,
-        price: 100 + index, brokerage: 0, timestamp: tradeTime + index * HOUR,
-      }));
+      insertedTrades.push(
+        await database.recordTrade({
+          portfolioId: portfolio.id,
+          symbol: index < 3 ? "AAA.AX" : "BBB.AX",
+          side: "BUY",
+          quantity: 1,
+          price: 100 + index,
+          brokerage: 0,
+          timestamp: tradeTime + index * HOUR,
+        }),
+      );
     }
 
     const pageOne = await database.listTradePage(portfolio.id, 1);
     const pageTwo = await database.listTradePage(portfolio.id, 2);
-    const filtered = await database.listTradePage(portfolio.id, 1, 'BBB.AX');
+    const filtered = await database.listTradePage(portfolio.id, 1, "BBB.AX");
     expect(pageOne.trades).toHaveLength(6);
     expect(pageOne.trades[0].id).toBe(insertedTrades[7].id);
     expect(pageTwo.trades.map((trade) => trade.id)).toEqual([
@@ -191,41 +489,126 @@ describe('trade and performance persistence', () => {
       insertedTrades[0].id,
     ]);
     expect(filtered.trades).toHaveLength(5);
-    expect(filtered.trades.every((trade) => trade.symbol === 'BBB.AX')).toBe(true);
+    expect(filtered.trades.every((trade) => trade.symbol === "BBB.AX")).toBe(
+      true,
+    );
     expect(filtered.total).toBe(5);
-    expect(filtered.tickers).toEqual(['AAA.AX', 'BBB.AX']);
+    expect(filtered.tickers).toEqual(["AAA.AX", "BBB.AX"]);
   });
 
-  it('handles profile upserts, ownership checks, alerts, and missing ledger records', async () => {
-    const profile = await database.ensureUserProfile({ id: 'researcher', name: 'Researcher', email: 'one@example.com', image: 'avatar.png', googleSubject: 'google-1' });
-    expect(await database.getUserProfile('researcher')).toMatchObject({ id: 'researcher', name: 'Researcher', email: 'one@example.com' });
+  it("handles profile upserts, ownership checks, alerts, and missing ledger records", async () => {
+    const profile = await database.ensureUserProfile({
+      id: "researcher",
+      name: "Researcher",
+      email: "one@example.com",
+      image: "avatar.png",
+      googleSubject: "google-1",
+    });
+    expect(await database.getUserProfile("researcher")).toMatchObject({
+      id: "researcher",
+      name: "Researcher",
+      email: "one@example.com",
+    });
 
-    const updated = await database.ensureUserProfile({ id: profile.id, name: 'Updated Researcher', isAnonymous: false });
-    expect(updated).toMatchObject({ id: 'researcher', name: 'Updated Researcher', email: null, image: null, googleSubject: null, isAnonymous: false });
-    expect(await database.getUserProfile('missing-user')).toBeNull();
+    const updated = await database.ensureUserProfile({
+      id: profile.id,
+      name: "Updated Researcher",
+      isAnonymous: false,
+    });
+    expect(updated).toMatchObject({
+      id: "researcher",
+      name: "Updated Researcher",
+      email: null,
+      image: null,
+      googleSubject: null,
+      isAnonymous: false,
+    });
+    expect(await database.getUserProfile("missing-user")).toBeNull();
 
-    const portfolio = await database.createPortfolio('Research portfolio', profile.id);
+    const portfolio = await database.createPortfolio(
+      "Research portfolio",
+      profile.id,
+    );
     expect(await database.ownsPortfolio(portfolio.id, profile.id)).toBe(true);
-    expect(await database.ownsPortfolio(portfolio.id, 'admin')).toBe(false);
-    await expect(database.addHolding(999_999, 'TEST.AX')).rejects.toThrow('Portfolio not found.');
-    await expect(database.removeHolding(999_999, 'TEST.AX')).rejects.toThrow('Portfolio not found.');
-    await expect(database.recordCashTransaction({ portfolioId: 999_999, type: 'DEPOSIT', amount: 10, timestamp: now, note: '' })).rejects.toThrow('Portfolio not found.');
-    await expect(database.deleteCashTransaction(portfolio.id, 999_999, profile.id)).rejects.toThrow('Cash transaction not found.');
+    expect(await database.ownsPortfolio(portfolio.id, "admin")).toBe(false);
+    await expect(database.addHolding(999_999, "TEST.AX")).rejects.toThrow(
+      "Portfolio not found.",
+    );
+    await expect(database.removeHolding(999_999, "TEST.AX")).rejects.toThrow(
+      "Portfolio not found.",
+    );
+    await expect(
+      database.recordCashTransaction({
+        portfolioId: 999_999,
+        type: "DEPOSIT",
+        amount: 10,
+        timestamp: now,
+        note: "",
+      }),
+    ).rejects.toThrow("Portfolio not found.");
+    await expect(
+      database.deleteCashTransaction(portfolio.id, 999_999, profile.id),
+    ).rejects.toThrow("Cash transaction not found.");
 
-    await database.recordAlert(portfolio.id, { symbol: 'TEST.AX', strategyId: 'rsi-14', signal: 'BUY', timestamp: now, price: 100, rationale: 'test alert', indicators: { rsi: 29 } }, profile.id);
-    expect(await database.listAlerts(portfolio.id, profile.id)).toMatchObject([{ portfolioId: portfolio.id, indicators: { rsi: 29 } }]);
+    await database.recordAlert(
+      portfolio.id,
+      {
+        symbol: "TEST.AX",
+        strategyId: "rsi-14",
+        signal: "BUY",
+        timestamp: now,
+        price: 100,
+        rationale: "test alert",
+        indicators: { rsi: 29 },
+      },
+      profile.id,
+    );
+    expect(await database.listAlerts(portfolio.id, profile.id)).toMatchObject([
+      { portfolioId: portfolio.id, indicators: { rsi: 29 } },
+    ]);
     expect(await database.listAlerts(undefined, profile.id)).toHaveLength(1);
-    expect(await database.listCashTransactionPage(portfolio.id, 1)).toMatchObject({ transactions: [], total: 0, page: 1, pageCount: 0 });
+    expect(
+      await database.listCashTransactionPage(portfolio.id, 1),
+    ).toMatchObject({ transactions: [], total: 0, page: 1, pageCount: 0 });
 
-    const cashTransaction = await database.recordCashTransaction({ portfolioId: portfolio.id, type: 'DEPOSIT', amount: 25, timestamp: now, note: 'Test funding' }, profile.id);
+    const cashTransaction = await database.recordCashTransaction(
+      {
+        portfolioId: portfolio.id,
+        type: "DEPOSIT",
+        amount: 25,
+        timestamp: now,
+        note: "Test funding",
+      },
+      profile.id,
+    );
     await database.savePerformanceSnapshots(portfolio.id, {
       holdings: [],
-      portfolio: [{ timestamp: now, cashBalance: 25, marketValue: 0, totalValue: 25, contributedCapital: 25, profitLoss: 0 }],
+      portfolio: [
+        {
+          timestamp: now,
+          cashBalance: 25,
+          marketValue: 0,
+          totalValue: 25,
+          contributedCapital: 25,
+          profitLoss: 0,
+        },
+      ],
     });
-    await expect(database.deleteCashTransaction(portfolio.id, cashTransaction.id, profile.id)).resolves.toMatchObject({ id: cashTransaction.id });
-    expect(await database.listPerformance(portfolio.id)).toEqual({ holdings: [], portfolio: [] });
+    await expect(
+      database.deleteCashTransaction(
+        portfolio.id,
+        cashTransaction.id,
+        profile.id,
+      ),
+    ).resolves.toMatchObject({ id: cashTransaction.id });
+    expect(await database.listPerformance(portfolio.id)).toEqual({
+      holdings: [],
+      portfolio: [],
+    });
 
-    await expect(database.deletePortfolio(portfolio.id, profile.id)).resolves.toBeUndefined();
+    await expect(
+      database.deletePortfolio(portfolio.id, profile.id),
+    ).resolves.toBeUndefined();
     expect(await database.ownsPortfolio(portfolio.id, profile.id)).toBe(false);
   });
 });

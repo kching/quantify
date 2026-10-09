@@ -1,19 +1,115 @@
 @layer component-styles {
-.landing-page { position: relative; display: grid; min-height: 100vh; place-items: center; overflow: hidden; padding: 30px; background: #101a2b; }
-.landing-card { position: relative; z-index: 1; width: min(100%, 510px); padding: 52px; border: 1px solid #ffffff18; border-radius: 20px; background: #17243aeb; box-shadow: 0 28px 90px #050b16aa; }
-.brand-mark { margin: 0 0 46px; color: #f8fafc; font-size: 15px; font-weight: 800; letter-spacing: 3px; }
-.landing-eyebrow { color: #83aaff; font-size: 10px; font-weight: 800; letter-spacing: 1.7px; }
-.landing-card h1 { max-width: 410px; margin: 14px 0 16px; color: #f8fafc; font-size: clamp(34px, 5vw, 52px); font-weight: 650; letter-spacing: -2px; line-height: 1.03; }
-.landing-copy { max-width: 410px; margin: 0; color: #aebbd0; font-size: 15px; line-height: 1.65; }
-.landing-actions { display: grid; gap: 10px; margin-top: 34px; }
-.google-button, .landing-primary { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 10px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; transition: transform .15s, background .15s; }
-.google-button { border: 0; background: white; color: #26364d; }
-.google-button:hover, .landing-primary:hover { transform: translateY(-1px); }
-.google-icon { width: 19px; height: 19px; }
-.landing-primary { width: fit-content; margin-top: 31px; padding: 0 22px; background: #4d80ed; color: white; }
-.landing-note { margin: 24px 0 0; color: #7f8da4; font-size: 11px; line-height: 1.5; text-align: center; }
-.landing-orbit { position: absolute; border: 1px solid #517fe92e; border-radius: 50%; }
-.landing-orbit-one { width: 720px; height: 720px; right: -340px; top: -220px; }
-.landing-orbit-two { width: 460px; height: 460px; bottom: -250px; left: -170px; border-color: #7d9ffb1c; }
+  .landing-page {
+    position: relative;
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    overflow: hidden;
+    padding: 30px;
+    background: #101a2b;
+  }
+  .landing-card {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 510px);
+    padding: 52px;
+    border: 1px solid #ffffff18;
+    border-radius: 20px;
+    background: #17243aeb;
+    box-shadow: 0 28px 90px #050b16aa;
+  }
+  .brand-mark {
+    margin: 0 0 46px;
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 3px;
+  }
+  .landing-eyebrow {
+    color: #83aaff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.7px;
+  }
+  .landing-card h1 {
+    max-width: 410px;
+    margin: 14px 0 16px;
+    color: #f8fafc;
+    font-size: clamp(34px, 5vw, 52px);
+    font-weight: 650;
+    letter-spacing: -2px;
+    line-height: 1.03;
+  }
+  .landing-copy {
+    max-width: 410px;
+    margin: 0;
+    color: #aebbd0;
+    font-size: 15px;
+    line-height: 1.65;
+  }
+  .landing-actions {
+    display: grid;
+    gap: 10px;
+    margin-top: 34px;
+  }
+  .google-button,
+  .landing-primary {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    transition:
+      transform 0.15s,
+      background 0.15s;
+  }
+  .google-button {
+    border: 0;
+    background: white;
+    color: #26364d;
+  }
+  .google-button:hover,
+  .landing-primary:hover {
+    transform: translateY(-1px);
+  }
+  .google-icon {
+    width: 19px;
+    height: 19px;
+  }
+  .landing-primary {
+    width: fit-content;
+    margin-top: 31px;
+    padding: 0 22px;
+    background: #4d80ed;
+    color: white;
+  }
+  .landing-note {
+    margin: 24px 0 0;
+    color: #7f8da4;
+    font-size: 11px;
+    line-height: 1.5;
+    text-align: center;
+  }
+  .landing-orbit {
+    position: absolute;
+    border: 1px solid #517fe92e;
+    border-radius: 50%;
+  }
+  .landing-orbit-one {
+    width: 720px;
+    height: 720px;
+    right: -340px;
+    top: -220px;
+  }
+  .landing-orbit-two {
+    width: 460px;
+    height: 460px;
+    bottom: -250px;
+    left: -170px;
+    border-color: #7d9ffb1c;
+  }
 }
-

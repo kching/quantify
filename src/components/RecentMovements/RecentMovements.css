@@ -1,10 +1,47 @@
 @layer component-styles {
-.movement-content { padding: 0 19px 15px; }
-.movement-subtitle { margin: 4px 0 0; color: #8a96a6; font-size: 11px; }
-.watch-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 67px; border-top: 1px solid #eef1f5; }
-.watch-meta { display: flex; flex-direction: column; gap: 5px; }
-.watch-meta small { color: #78869a; font-size: 11px; font-variant-numeric: tabular-nums; }
-.price-chart { display: block; width: 100%; height: 39px; }
-.chart-empty { display: grid; min-height: 100px; place-items: center; padding: 18px; color: #8894a5; font-size: 13px; text-align: center; }
-.chart-caption { margin: 9px 0 0; color: #8a96a6; font-size: 11px; }
+  .movement-content {
+    padding: 0 19px 15px;
+  }
+  .movement-subtitle {
+    margin: 4px 0 0;
+    color: #8a96a6;
+    font-size: 11px;
+  }
+  .watch-row {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 67px;
+    border-top: 1px solid #eef1f5;
+  }
+  .watch-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .watch-meta small {
+    color: #78869a;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .price-chart {
+    display: block;
+    width: 100%;
+    height: 39px;
+  }
+  .chart-empty {
+    display: grid;
+    min-height: 100px;
+    place-items: center;
+    padding: 18px;
+    color: #8894a5;
+    font-size: 13px;
+    text-align: center;
+  }
+  .chart-caption {
+    margin: 9px 0 0;
+    color: #8a96a6;
+    font-size: 11px;
+  }
 }

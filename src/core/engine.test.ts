@@ -1,31 +1,43 @@
-import { describe, expect, it } from 'bun:test';
-import { analyzeSymbol, loadStrategy, strategies } from './engine';
-import type { Candle } from './types';
+import { describe, expect, it } from "bun:test";
+import { analyzeSymbol, loadStrategy, strategies } from "./engine";
+import type { Candle } from "./types";
 
-describe('core strategy engine', () => {
-  it('registers Klinger and RSI as separate strategies', () => {
-    expect(strategies.map((strategy) => strategy.id)).toEqual(['klinger-oscillator', 'rsi']);
+describe("core strategy engine", () => {
+  it("registers Klinger and RSI as separate strategies", () => {
+    expect(strategies.map((strategy) => strategy.id)).toEqual([
+      "klinger-oscillator",
+      "rsi",
+    ]);
   });
 
-  it('returns one result per registered strategy for a symbol', () => {
+  it("returns one result per registered strategy for a symbol", () => {
     const candles: Candle[] = Array.from({ length: 80 }, (_, index) => {
       const close = 100 + index;
       return {
-        symbol: 'TEST.AX', interval: '1d', timestamp: index, open: close, high: close + 1,
-        low: close - 1, close, volume: 1_000,
+        symbol: "TEST.AX",
+        interval: "1d",
+        timestamp: index,
+        open: close,
+        high: close + 1,
+        low: close - 1,
+        close,
+        volume: 1_000,
       };
     });
 
-    const results = analyzeSymbol('TEST.AX', candles);
+    const results = analyzeSymbol("TEST.AX", candles);
 
     expect(results).toHaveLength(2);
-    expect(results.map((result) => result.strategyId)).toEqual(['klinger-oscillator', 'rsi']);
-    expect(results.every((result) => result.symbol === 'TEST.AX')).toBe(true);
+    expect(results.map((result) => result.strategyId)).toEqual([
+      "klinger-oscillator",
+      "rsi",
+    ]);
+    expect(results.every((result) => result.symbol === "TEST.AX")).toBe(true);
   });
 
-  it('dynamically loads a strategy by holding strategy name', async () => {
-    const strategy = await loadStrategy('klinger-oscillator');
+  it("dynamically loads a strategy by holding strategy name", async () => {
+    const strategy = await loadStrategy("klinger-oscillator");
 
-    expect(strategy?.id).toBe('klinger-oscillator');
+    expect(strategy?.id).toBe("klinger-oscillator");
   });
 });

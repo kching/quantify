@@ -1,4 +1,11 @@
-import type { Candle, HoldingPerformancePoint, PerformanceSnapshots, PortfolioCashTransaction, PortfolioPerformancePoint, PortfolioTrade } from './types';
+import type {
+  Candle,
+  HoldingPerformancePoint,
+  PerformanceSnapshots,
+  PortfolioCashTransaction,
+  PortfolioPerformancePoint,
+  PortfolioTrade,
+} from "./types";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -22,8 +29,12 @@ export function calculatePerformanceSnapshots(
   const holdingPoints: HoldingPerformancePoint[] = [];
   const pointsBySymbol = new Map<string, HoldingPerformancePoint[]>();
   for (const [symbol, symbolTrades] of tradesBySymbol) {
-    const orderedTrades = [...symbolTrades].sort((left, right) => left.timestamp - right.timestamp || left.id - right.id);
-    const orderedCandles = [...(candlesBySymbol.get(symbol) ?? [])].sort((left, right) => left.timestamp - right.timestamp);
+    const orderedTrades = [...symbolTrades].sort(
+      (left, right) => left.timestamp - right.timestamp || left.id - right.id,
+    );
+    const orderedCandles = [...(candlesBySymbol.get(symbol) ?? [])].sort(
+      (left, right) => left.timestamp - right.timestamp,
+    );
     const points: HoldingPerformancePoint[] = [];
     let tradeIndex = 0;
     let quantity = 0;
@@ -31,13 +42,19 @@ export function calculatePerformanceSnapshots(
     let cashFlow = 0;
 
     for (const [candleIndex, candle] of orderedCandles.entries()) {
-      const isLatestCurrentCandle = asOfTimestamp != null && candleIndex === orderedCandles.length - 1;
+      const isLatestCurrentCandle =
+        asOfTimestamp != null && candleIndex === orderedCandles.length - 1;
       const closeTimestamp = isLatestCurrentCandle
         ? asOfTimestamp
-        : asOfTimestamp == null ? candle.timestamp + HOUR_MS : Math.min(candle.timestamp + HOUR_MS, asOfTimestamp);
-      while (tradeIndex < orderedTrades.length && orderedTrades[tradeIndex].timestamp <= closeTimestamp) {
+        : asOfTimestamp == null
+          ? candle.timestamp + HOUR_MS
+          : Math.min(candle.timestamp + HOUR_MS, asOfTimestamp);
+      while (
+        tradeIndex < orderedTrades.length &&
+        orderedTrades[tradeIndex].timestamp <= closeTimestamp
+      ) {
         const trade = orderedTrades[tradeIndex];
-        if (trade.side === 'BUY') {
+        if (trade.side === "BUY") {
           quantity += trade.quantity;
           costBasis += trade.quantity * trade.price + trade.brokerage;
           cashFlow -= trade.quantity * trade.price + trade.brokerage;
@@ -67,7 +84,9 @@ export function calculatePerformanceSnapshots(
     holdingPoints.push(...points);
   }
 
-  const timestamps = [...new Set(holdingPoints.map((point) => point.timestamp))].sort((left, right) => left - right);
+  const timestamps = [
+    ...new Set(holdingPoints.map((point) => point.timestamp)),
+  ].sort((left, right) => left - right);
   const portfolioPoints: PortfolioPerformancePoint[] = [];
   for (const timestamp of timestamps) {
     let marketValue = 0;
@@ -80,25 +99,45 @@ export function calculatePerformanceSnapshots(
     let contributedCapital = 0;
     for (const trade of trades) {
       if (trade.timestamp > timestamp) continue;
-      cashBalance += trade.side === 'BUY' ? -(trade.quantity * trade.price + trade.brokerage) : trade.quantity * trade.price - trade.brokerage;
+      cashBalance +=
+        trade.side === "BUY"
+          ? -(trade.quantity * trade.price + trade.brokerage)
+          : trade.quantity * trade.price - trade.brokerage;
     }
     for (const transaction of cashTransactions) {
       if (transaction.timestamp > timestamp) continue;
-      const amount = transaction.type === 'DEPOSIT' ? transaction.amount : -transaction.amount;
+      const amount =
+        transaction.type === "DEPOSIT"
+          ? transaction.amount
+          : -transaction.amount;
       cashBalance += amount;
       contributedCapital += amount;
     }
     const totalValue = marketValue + cashBalance;
-    portfolioPoints.push({ timestamp, cashBalance, marketValue, totalValue, contributedCapital, profitLoss: totalValue - contributedCapital });
+    portfolioPoints.push({
+      timestamp,
+      cashBalance,
+      marketValue,
+      totalValue,
+      contributedCapital,
+      profitLoss: totalValue - contributedCapital,
+    });
   }
 
   return {
-    holdings: holdingPoints.sort((left, right) => left.timestamp - right.timestamp || left.symbol.localeCompare(right.symbol)),
+    holdings: holdingPoints.sort(
+      (left, right) =>
+        left.timestamp - right.timestamp ||
+        left.symbol.localeCompare(right.symbol),
+    ),
     portfolio: portfolioPoints,
   };
 }
 
-function latestPointAtOrBefore(points: readonly HoldingPerformancePoint[], timestamp: number): HoldingPerformancePoint | undefined {
+function latestPointAtOrBefore(
+  points: readonly HoldingPerformancePoint[],
+  timestamp: number,
+): HoldingPerformancePoint | undefined {
   let latest: HoldingPerformancePoint | undefined;
   for (const point of points) {
     if (point.timestamp > timestamp) break;
