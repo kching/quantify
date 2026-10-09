@@ -622,7 +622,9 @@ describe("Dashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      document.querySelector('[role="dialog"]')?.hasAttribute("data-closed"),
+    ).toBe(true);
     expect(fetchMock).not.toHaveBeenCalledWith(
       "/api/portfolios",
       expect.objectContaining({ method: "POST" }),
@@ -718,11 +720,18 @@ describe("Dashboard", () => {
       ),
     );
     expect(await screen.findByText("5 @ $120.00")).toBeDefined();
-    expect(screen.getByText(/Brokerage \$7\.25/)).toBeDefined();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/portfolios/1/trades",
-      expect.objectContaining({ method: "POST" }),
+    const tradeRequest = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        String(url) === "/api/portfolios/1/trades" &&
+        init?.method === "POST",
     );
+    expect(JSON.parse(String(tradeRequest?.[1]?.body))).toMatchObject({
+      symbol: "CSL",
+      side: "BUY",
+      quantity: 5,
+      price: 120,
+      brokerage: 7.25,
+    });
     expect(await screen.findByLabelText("Remove CSL")).toBeDefined();
     await waitForScanCompletion();
   });
