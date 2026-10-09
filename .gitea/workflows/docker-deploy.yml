@@ -1,0 +1,77 @@
+name: Deploy Docker application
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Publish Docker image
+    types:
+      - completed
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load deployment variables
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          get_var() {
+            sed -n -E "s/^$1:[[:space:]]*//p" .gitea/vars.yml \
+              | head -n 1 \
+              | sed -E "s/^['\"](.*)['\"]$/\1/"
+          }
+
+          server_hostname="$(get_var server_hostname)"
+          working_directory="$(get_var working_directory)"
+          if [[ -z "$server_hostname" || -z "$working_directory" ]]; then
+            echo "server_hostname and working_directory must be set in .gitea/vars.yml" >&2
+            exit 1
+          fi
+          if [[ ! "$server_hostname" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+            echo "server_hostname must be a hostname or IPv4 address without a username" >&2
+            exit 1
+          fi
+
+          echo "server_hostname=$server_hostname" >> "$GITHUB_OUTPUT"
+          echo "working_directory=$working_directory" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy with Docker Compose over SSH
+        shell: bash
+        env:
+          SERVER_HOSTNAME: ${{ steps.vars.outputs.server_hostname }}
+          WORKING_DIRECTORY: ${{ steps.vars.outputs.working_directory }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$SSH_USER" || -z "$SSH_PRIVATE_KEY" || -z "$SSH_KNOWN_HOSTS" ]]; then
+            echo "Set DEPLOY_SSH_USER, DEPLOY_SSH_PRIVATE_KEY, and DEPLOY_SSH_KNOWN_HOSTS in Gitea Actions secrets" >&2
+            exit 1
+          fi
+
+          key_file="$RUNNER_TEMP/deploy_ssh_key"
+          known_hosts_file="$RUNNER_TEMP/deploy_known_hosts"
+          trap 'rm -f "$key_file" "$known_hosts_file"' EXIT
+          install -m 600 /dev/null "$key_file"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
+          install -m 600 /dev/null "$known_hosts_file"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$known_hosts_file"
+
+          printf -v quoted_directory '%q' "$WORKING_DIRECTORY"
+          ssh \
+            -i "$key_file" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            "$SSH_USER@$SERVER_HOSTNAME" \
+            "cd -- $quoted_directory && docker compose pull && docker compose up -d --remove-orphans"
