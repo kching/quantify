@@ -856,7 +856,6 @@ function DashboardContent({
                         "—"}
                       <span className="metric-unit"> today</span>
                     </strong>
-                    <small>Klinger + RSI · daily candles</small>
                   </CardContent>
                 </Card>
               </section>

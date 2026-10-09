@@ -279,7 +279,6 @@ export default function Index({
                       {trade.quantity} @ {money.format(trade.price)}
                     </span>
                     <small>
-                      Brokerage {money.format(trade.brokerage)} ·{" "}
                       {dateTime.format(trade.timestamp)}
                     </small>
                     <Button
