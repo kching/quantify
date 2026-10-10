@@ -15,6 +15,7 @@ import {
 import "./PortfolioPerformance.css";
 
 export type PerformanceRange = "1y" | "6m" | "3m" | "1m" | "1w";
+type PerformanceScale = "day" | "month";
 interface Props {
   performance: PerformanceSnapshots;
   range: PerformanceRange;
@@ -25,29 +26,81 @@ const ranges: Array<{
   label: string;
   ariaLabel: string;
   days: number;
+  scale: PerformanceScale;
 }> = [
-  { value: "1y", label: "1Y", ariaLabel: "Last 1y", days: 365 },
-  { value: "6m", label: "6M", ariaLabel: "Last 6m", days: 183 },
-  { value: "3m", label: "3M", ariaLabel: "Last 3m", days: 92 },
-  { value: "1m", label: "1M", ariaLabel: "Last 1m", days: 30 },
-  { value: "1w", label: "1W", ariaLabel: "Last 1w", days: 7 },
+  { value: "1y", label: "1Y", ariaLabel: "Last 1y", days: 365, scale: "month" },
+  { value: "6m", label: "6M", ariaLabel: "Last 6m", days: 183, scale: "month" },
+  { value: "3m", label: "3M", ariaLabel: "Last 3m", days: 92, scale: "day" },
+  { value: "1m", label: "1M", ariaLabel: "Last 1m", days: 30, scale: "day" },
+  { value: "1w", label: "1W", ariaLabel: "Last 1w", days: 7, scale: "day" },
 ];
 const money = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
 });
-const dateTime = new Intl.DateTimeFormat("en-AU", {
-  dateStyle: "medium",
-  timeStyle: "short",
-  hourCycle: "h23",
+const dailyTickLabel = new Intl.DateTimeFormat("en-AU", {
+  day: "numeric",
+  month: "short",
 });
+const monthlyTickLabel = new Intl.DateTimeFormat("en-AU", {
+  month: "short",
+  year: "2-digit",
+});
+
+function timeScaleTicks(
+  start: number,
+  end: number,
+  range: (typeof ranges)[number],
+): Array<{ timestamp: number; position: number; label: string | null }> {
+  const span = Math.max(1, end - start);
+  if (range.scale === "day") {
+    const count = Math.floor((end - start) / 86_400_000);
+    const labelEvery = range.days <= 7 ? 1 : range.days <= 30 ? 5 : 14;
+    const ticks = Array.from({ length: count + 1 }, (_, index) => {
+      const timestamp = start + index * 86_400_000;
+      return {
+        timestamp,
+        position: ((timestamp - start) / span) * 100,
+        label:
+          index % labelEvery === 0 || index === count
+            ? dailyTickLabel.format(timestamp)
+            : null,
+      };
+    });
+    if (count * 86_400_000 < end - start)
+      ticks.push({
+        timestamp: end,
+        position: 100,
+        label: dailyTickLabel.format(end),
+      });
+    return ticks;
+  }
+
+  const timestamps = [start];
+  const startDate = new Date(start);
+  const month = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
+  while (month.getTime() < end) {
+    timestamps.push(month.getTime());
+    month.setMonth(month.getMonth() + 1);
+  }
+  if (timestamps.at(-1) !== end) timestamps.push(end);
+  return timestamps.map((timestamp) => ({
+    timestamp,
+    position: ((timestamp - start) / span) * 100,
+    label: monthlyTickLabel.format(timestamp),
+  }));
+}
 
 function PerformanceChart({
   points,
   label,
+  rangeStart,
+  rangeEnd,
 }: {
   points: PerformanceSnapshots["portfolio"];
   label: string;
+  rangeStart: number;
+  rangeEnd: number;
 }): React.JSX.Element {
   if (points.length < 2)
     return (
@@ -60,10 +113,11 @@ function PerformanceChart({
   const min = Math.min(0, ...values);
   const max = Math.max(0, ...values);
   const span = max - min || 1;
+  const timeSpan = Math.max(1, rangeEnd - rangeStart);
   const coords = values
     .map(
       (value, index) =>
-        `${(index / (values.length - 1)) * 600},${90 - ((value - min) / span) * 80}`,
+        `${((points[index].timestamp - rangeStart) / timeSpan) * 600},${90 - ((value - min) / span) * 80}`,
     )
     .join(" ");
   const zeroY = 90 - ((0 - min) / span) * 80;
@@ -160,6 +214,9 @@ export default function PortfolioPerformance({
   const portfolioPoints = performance.portfolio.filter(
     (point) => point.timestamp >= cutoff,
   );
+  const axisTicks = latest
+    ? timeScaleTicks(cutoff, latest.timestamp, selected)
+    : [];
   const latestHoldings = new Map<string, HoldingPerformancePoint>();
   const history = new Map<string, HoldingPerformancePoint[]>();
   for (const point of performance.holdings) {
@@ -202,13 +259,19 @@ export default function PortfolioPerformance({
           <CardContent className="performance-content">
             <div className="performance-metrics">
               <div className="performance-total">
+                <small>HOLDING VALUE</small>
+                <strong>
+                  {latest ? money.format(latest.marketValue) : "—"}
+                </strong>
+              </div>
+              <div className="performance-total">
                 <small>CASH BALANCE</small>
                 <strong>
                   {latest ? money.format(latest.cashBalance) : "—"}
                 </strong>
               </div>
               <div className="performance-total">
-                <small>P&L</small>
+                <small>PROFIT &amp; LOSS</small>
                 <strong
                   className={
                     latest && latest.profitLoss >= 0 ? "positive" : "negative"
@@ -221,18 +284,31 @@ export default function PortfolioPerformance({
             <PerformanceChart
               points={portfolioPoints}
               label={selected.ariaLabel}
+              rangeStart={cutoff}
+              rangeEnd={latest?.timestamp ?? cutoff}
             />
             {portfolioPoints.length > 1 && (
-              <div className="chart-axis-labels">
-                <span>{dateTime.format(portfolioPoints[0].timestamp)}</span>
-                <span>
-                  {dateTime.format(portfolioPoints.at(-1)!.timestamp)}
-                </span>
+              <div
+                className="chart-axis-labels"
+                aria-label={`${selected.scale === "day" ? "Daily" : "Monthly"} chart scale, ${selected.ariaLabel}`}
+                data-scale={selected.scale}
+              >
+                {axisTicks.map((tick) => (
+                  <span
+                    className="chart-axis-tick"
+                    data-axis-tick
+                    key={tick.timestamp}
+                    style={{ left: `${tick.position}%` }}
+                  >
+                    <i aria-hidden="true" />
+                    {tick.label && <time>{tick.label}</time>}
+                  </span>
+                ))}
               </div>
             )}
             <p className="chart-caption">
               {selected.label} · Each point is captured from cached hourly
-              candle closes.
+              candle closes. Dates are shown on a {selected.scale} scale.
             </p>
             <div className="holding-performance">
               <div className="holding-heading">

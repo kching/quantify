@@ -909,6 +909,11 @@ describe("Dashboard", () => {
     const initialChart = screen.getByRole("img", {
       name: "Hourly portfolio profit and loss, Last 1m",
     });
+    expect(
+      screen
+        .getByLabelText("Daily chart scale, Last 1m")
+        .getAttribute("data-scale"),
+    ).toBe("day");
     const initialCoordinates = initialChart
       .querySelector("polyline")
       ?.getAttribute("points");
@@ -926,6 +931,17 @@ describe("Dashboard", () => {
     const weekChart = screen.getByRole("img", {
       name: "Hourly portfolio profit and loss, Last 1w",
     });
+    const dailyAxis = screen.getByLabelText("Daily chart scale, Last 1w");
+    expect(dailyAxis.getAttribute("data-scale")).toBe("day");
+    expect(dailyAxis.querySelectorAll("[data-axis-tick]")).toHaveLength(8);
+    const firstWeekPointX = Number(
+      weekChart
+        .querySelector("polyline")
+        ?.getAttribute("points")
+        ?.split(" ")[0]
+        .split(",")[0],
+    );
+    expect(firstWeekPointX).toBeGreaterThan(0);
     expect(
       weekChart.querySelector("polyline")?.getAttribute("points"),
     ).not.toBe(initialCoordinates);
@@ -940,12 +956,40 @@ describe("Dashboard", () => {
         .getByRole("tab", { name: "Last 1w" })
         .getAttribute("aria-selected"),
     ).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Last 3m" }));
+    expect(
+      screen
+        .getByLabelText("Daily chart scale, Last 3m")
+        .getAttribute("data-scale"),
+    ).toBe("day");
+    fireEvent.click(screen.getByRole("tab", { name: "Last 6m" }));
+    expect(
+      screen
+        .getByLabelText("Monthly chart scale, Last 6m")
+        .getAttribute("data-scale"),
+    ).toBe("month");
     fireEvent.click(screen.getByRole("tab", { name: "Last 1y" }));
     expect(
       screen.getByRole("img", {
         name: "Hourly portfolio profit and loss, Last 1y",
       }),
     ).toBeDefined();
+    const monthlyAxis = screen.getByLabelText("Monthly chart scale, Last 1y");
+    expect(monthlyAxis.getAttribute("data-scale")).toBe("month");
+    expect(
+      monthlyAxis.querySelectorAll("[data-axis-tick]").length,
+    ).toBeLessThan(15);
+    const metricLabels = Array.from(
+      document.querySelectorAll(
+        ".performance-metrics .performance-total small",
+      ),
+      (element) => element.textContent,
+    );
+    expect(metricLabels).toEqual([
+      "HOLDING VALUE",
+      "CASH BALANCE",
+      "PROFIT & LOSS",
+    ]);
     expect(
       screen
         .getByRole("img", { name: "MQG.AX hourly profit and loss" })

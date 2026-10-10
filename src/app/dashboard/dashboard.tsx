@@ -786,7 +786,7 @@ function DashboardContent({
                       <div className="metric-icon blue">
                         <Wallet />
                       </div>
-                      <div className="metric-label">Portfolio</div>
+                      <div className="metric-label">PORTFOLIO</div>
                     </div>
                     <strong>
                       {latestPortfolioPerformance

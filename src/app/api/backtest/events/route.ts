@@ -14,10 +14,17 @@ export async function GET(request: Request): Promise<Response> {
       { status: 400 },
     );
 
-  return new Response(subscribeBacktestEvents(batchId), {
+  const requestedEventId = Number(request.headers.get("Last-Event-ID") ?? "0");
+  const lastEventId =
+    Number.isSafeInteger(requestedEventId) && requestedEventId >= 0
+      ? requestedEventId
+      : 0;
+
+  return new Response(subscribeBacktestEvents(batchId, lastEventId), {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
     },
   });
 }

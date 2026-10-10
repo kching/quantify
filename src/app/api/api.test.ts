@@ -754,6 +754,7 @@ describe("API route handlers", () => {
       expect(eventResponse.headers.get("content-type")).toContain(
         "text/event-stream",
       );
+      expect(eventResponse.headers.get("x-accel-buffering")).toBe("no");
       const eventReader = eventResponse.body!.getReader();
       const responsePromise = backtestRoute.POST(
         request(

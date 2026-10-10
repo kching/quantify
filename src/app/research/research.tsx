@@ -134,8 +134,10 @@ export default function ResearchPage({
             })
             .catch(reject);
         };
-        eventSource.onerror = () =>
-          reject(new Error("The backtest event connection failed."));
+        eventSource.onerror = () => {
+          if (eventSource.readyState === EventSource.CLOSED)
+            reject(new Error("The backtest event connection failed."));
+        };
       });
       return true;
     } catch (cause) {

@@ -28,7 +28,11 @@ const result = {
 };
 
 class MockEventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
   static latest: MockEventSource | null = null;
+  readyState: number = MockEventSource.CONNECTING;
   onopen: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   closed = false;
@@ -36,7 +40,10 @@ class MockEventSource {
 
   constructor(readonly url: string) {
     MockEventSource.latest = this;
-    queueMicrotask(() => this.onopen?.(new Event("open")));
+    queueMicrotask(() => {
+      this.readyState = EventSource.OPEN;
+      this.onopen?.(new Event("open"));
+    });
   }
 
   addEventListener(type: string, listener: (event: Event) => void): void {
@@ -50,6 +57,7 @@ class MockEventSource {
 
   close(): void {
     this.closed = true;
+    this.readyState = EventSource.CLOSED;
   }
 }
 
@@ -183,6 +191,13 @@ describe("ResearchPage", () => {
     );
 
     await screen.findByRole("button", { name: "Select run 1" });
+    expect(
+      await screen.findByText("Strategy return vs drawdown"),
+    ).toBeDefined();
+    const eventSource = MockEventSource.latest!;
+    eventSource.readyState = EventSource.CONNECTING;
+    eventSource.onerror?.(new Event("error"));
+    expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Select run 1" }));
     expect(screen.getByText("Configure your backtest")).toBeDefined();
     expect(screen.getAllByText("+61.2% p.a.").length).toBeGreaterThan(0);
