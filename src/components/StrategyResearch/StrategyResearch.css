@@ -9,9 +9,6 @@
     border-color: #e4e9f0;
     box-shadow: 0 2px 7px #20304a06;
   }
-  .research-setup-panel {
-    max-width: 980px;
-  }
   .research-setup-form {
     display: grid;
     gap: 22px;
