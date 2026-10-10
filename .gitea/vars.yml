@@ -1,4 +1,4 @@
 registry: docker.local.curiouscoding.dev
 application_name: quantify
-server_hostname: ""
-working_directory: ""
+server_hostname: "labs.internal"
+working_directory: "/mnt/shared/quantify"
