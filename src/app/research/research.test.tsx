@@ -117,13 +117,13 @@ describe("ResearchPage", () => {
   it("runs a selected strategy sweep and shows the results workspace", async () => {
     render(<ResearchPage />);
 
-    expect(screen.queryByText("Strategy return vs drawdown")).toBeNull();
+    expect(screen.queryByText("PARAMETER SWEEP")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Run parameter sweep" }),
     );
 
     expect(
-      await screen.findByText("Strategy return vs drawdown"),
+      await screen.findByRole("button", { name: "Select run 1" }),
     ).toBeDefined();
     expect(screen.getByText("Configure your backtest")).toBeDefined();
     expect(screen.getByText("Buy-and-hold return")).toBeDefined();
@@ -193,9 +193,7 @@ describe("ResearchPage", () => {
     );
 
     await screen.findByRole("button", { name: "Select run 1" });
-    expect(
-      await screen.findByText("Strategy return vs drawdown"),
-    ).toBeDefined();
+    expect(screen.getByText("Maximum return")).toBeDefined();
     const eventSource = MockEventSource.latest!;
     eventSource.readyState = EventSource.CONNECTING;
     eventSource.onerror?.(new Event("error"));
@@ -304,7 +302,7 @@ describe("ResearchPage", () => {
     );
 
     expect(
-      await screen.findByText("Strategy return vs drawdown"),
+      await screen.findByRole("button", { name: "Select run 1" }),
     ).toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(

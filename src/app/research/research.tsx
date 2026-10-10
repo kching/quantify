@@ -190,7 +190,7 @@ export default function ResearchPage({
       />
 
       <main className="app-main">
-        <div className="dashboard-content">
+        <div className="dashboard-content research-page-content">
           <section className="page-heading">
             <div>
               <p className="section-kicker">STRATEGY LAB</p>

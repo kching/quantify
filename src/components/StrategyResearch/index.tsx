@@ -701,7 +701,7 @@ export default function StrategyResearch({
       {inputComponent}
       {result && result.runs.length > 0 && (
         <section className="research-results">
-          <hr className="my-4 text-muted-foreground" />
+          <hr className="research-results-divider" />
           <div className="outcome-grid">
             {outcomeCards.map(
               ({ label, run, type }) =>
@@ -735,9 +735,10 @@ export default function StrategyResearch({
                             )
                           : type === "return" && result.summary
                             ? annualizedPercent(result.summary.maxReturnCagrPct)
-                            : type === "balanced" && result.summary
+                            : type === "balanced"
                               ? annualizedPercent(
-                                  result.summary.balancedPickCagrPct,
+                                  result.summary?.balancedPickCagrPct ??
+                                    strategyCagr(run),
                                 )
                               : strategyReturnComparison(run, result.days)}
                     </strong>
@@ -755,15 +756,6 @@ export default function StrategyResearch({
           </div>
           <div className="results-grid">
             <Card className="scatter-panel">
-              <CardHeader className="section-card-header">
-                <div>
-                  <p className="section-kicker">PARAMETER SWEEP</p>
-                  <CardTitle>Strategy return vs drawdown</CardTitle>
-                  <CardDescription>
-                    Select a run to compare its return with buy-and-hold.
-                  </CardDescription>
-                </div>
-              </CardHeader>
               <CardContent>
                 <div className="scatter-chart">
                   <span className="axis-label axis-y">RETURN (p.a.)</span>
