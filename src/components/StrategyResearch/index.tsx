@@ -701,30 +701,7 @@ export default function StrategyResearch({
       {inputComponent}
       {result && result.runs.length > 0 && (
         <section className="research-results">
-          <div className="results-toolbar">
-            <div>
-              <Button variant="ghost" disabled={busy} onClick={onBack}>
-                <ArrowLeft className="size-4" />
-                Back to setup
-              </Button>
-            </div>
-            <div>
-              <p className="section-kicker">
-                {busy ? "SWEEP IN PROGRESS" : "SWEEP COMPLETE"}
-              </p>
-              <h2>{strategyLabels[result.strategy] ?? result.strategy}</h2>
-              <p>
-                {result.symbol} ·{" "}
-                {result.cadence === "hourly" ? "Hourly" : "Daily"} ·{" "}
-                {
-                  rangeOptions[result.cadence].find(
-                    (option) => option.days === result.days,
-                  )?.label
-                }
-              </p>
-            </div>
-            <div aria-hidden="true" />
-          </div>
+          <hr className="my-2"/>
           <div className="outcome-grid">
             {outcomeCards.map(
               ({ label, run, type }) =>
