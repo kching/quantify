@@ -67,7 +67,7 @@ interface StrategyResearchProps {
 
 const strategyLabels: Record<string, string> = {
   "klinger-oscillator": "Klinger Volume Oscillator",
-  "rsi-14": "RSI (14)",
+  rsi: "RSI (14)",
 };
 const rangeOptions: Record<
   Cadence,
@@ -545,7 +545,7 @@ export default function StrategyResearch({
                     <SelectOption value="klinger-oscillator">
                       Klinger Volume Oscillator
                     </SelectOption>
-                    <SelectOption value="rsi-14">RSI (14)</SelectOption>
+                    <SelectOption value="rsi">RSI (14)</SelectOption>
                   </SelectControl>
                 </label>
               </div>

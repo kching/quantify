@@ -58,14 +58,14 @@ describe("trade and performance persistence", () => {
       portfolioId: firstPortfolio.id,
       symbol: "TEST.AX",
       label: "RSI reversal",
-      name: "rsi-14",
+      name: "rsi",
       params: { period: 7 },
     });
     await database.saveHoldingStrategy({
       portfolioId: secondPortfolio.id,
       symbol: "TEST.AX",
       label: "RSI reversal",
-      name: "rsi-14",
+      name: "rsi",
       params: { period: 7 },
     });
 
@@ -87,7 +87,7 @@ describe("trade and performance persistence", () => {
         portfolioId: secondPortfolio.id,
         symbol: "TEST.AX",
         label: "RSI reversal",
-        name: "rsi-14",
+        name: "rsi",
         params: { period: 7 },
       },
     ]);
@@ -122,7 +122,7 @@ describe("trade and performance persistence", () => {
       portfolioId: portfolio.id,
       symbol: "NEW.AX",
       label: "New signal",
-      name: "rsi-14",
+      name: "rsi",
       params: { period: 14 },
     });
 
@@ -143,7 +143,7 @@ describe("trade and performance persistence", () => {
       portfolioId: portfolio.id,
       symbol: "STATE.AX",
       label: "State tracker",
-      name: "rsi-14",
+      name: "rsi",
       params: { period: 14 },
     });
 
@@ -554,7 +554,7 @@ describe("trade and performance persistence", () => {
       portfolio.id,
       {
         symbol: "TEST.AX",
-        strategyId: "rsi-14",
+        strategyId: "rsi",
         signal: "BUY",
         timestamp: now,
         price: 100,

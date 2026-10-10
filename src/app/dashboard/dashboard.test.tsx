@@ -65,7 +65,7 @@ const buySignal: SignalResult = {
 };
 const rsiSignal: SignalResult = {
   ...buySignal,
-  strategyId: "rsi-14",
+  strategyId: "rsi",
   strategyName: "RSI (14)",
   signal: "HOLD",
   rationale: "RSI is neutral.",

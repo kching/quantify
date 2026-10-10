@@ -50,7 +50,7 @@ export default function ResearchPage({
         cadence: input.cadence,
         days: String(input.days),
       });
-      if (input.strategy === "rsi-14")
+      if (input.strategy === "rsi")
         search.set("period", parameterTuple(input.ranges.period));
       else {
         search.set("fastPeriod", parameterTuple(input.ranges.fastPeriod));

@@ -967,7 +967,7 @@ function DashboardContent({
                                   variant="outline"
                                   className="alert-strategy"
                                 >
-                                  {alert.strategyId === "rsi-14"
+                                  {alert.strategyId === "rsi"
                                     ? "RSI (14)"
                                     : "Klinger"}
                                 </Badge>

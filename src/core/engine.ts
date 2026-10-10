@@ -10,7 +10,7 @@ export const strategies: readonly SignalStrategy[] = [
 const strategyLoaders: Record<string, () => Promise<SignalStrategy>> = {
   "klinger-oscillator": async () =>
     new (await import("./strategies/klinger.strategy")).KlingerStrategy(),
-  "rsi-14": async () =>
+  rsi: async () =>
     new (await import("./strategies/rsi.strategy")).RsiStrategy(),
 };
 
