@@ -701,7 +701,7 @@ export default function StrategyResearch({
       {inputComponent}
       {result && result.runs.length > 0 && (
         <section className="research-results">
-          <hr className="my-2"/>
+          <hr className="my-4 text-muted-foreground" />
           <div className="outcome-grid">
             {outcomeCards.map(
               ({ label, run, type }) =>
@@ -734,20 +734,12 @@ export default function StrategyResearch({
                                 buyAndHoldReturn,
                             )
                           : type === "return" && result.summary
-                            ? annualizedComparison(
-                                result.summary.maxReturnCagrPct,
-                                result.summary.maxReturnVsBuyAndHoldPct,
-                              )
+                            ? annualizedPercent(result.summary.maxReturnCagrPct)
                             : type === "balanced" && result.summary
-                              ? annualizedComparison(
+                              ? annualizedPercent(
                                   result.summary.balancedPickCagrPct,
-                                  result.summary.balancedPickVsBuyAndHoldPct,
                                 )
-                              : strategyReturnComparison(
-                                  run,
-                                  result.days,
-                                  result.summary?.buyAndHoldReturnPct,
-                                )}
+                              : strategyReturnComparison(run, result.days)}
                     </strong>
                     <small>
                       {type === "buy-hold"

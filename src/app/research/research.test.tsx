@@ -128,7 +128,8 @@ describe("ResearchPage", () => {
     expect(screen.getByText("Configure your backtest")).toBeDefined();
     expect(screen.getByText("Buy-and-hold return")).toBeDefined();
     expect(screen.getByText("Maximum return")).toBeDefined();
-    expect(screen.getAllByText("+61.2% p.a. (+24.6% p.a.)")).toHaveLength(2);
+    expect(screen.getAllByText("+61.2% p.a.")).toHaveLength(2);
+    expect(screen.queryByText("+61.2% p.a. (+24.6% p.a.)")).toBeNull();
     expect(
       screen.getByRole("img", { name: "Buy-and-hold return +36.6% p.a." }),
     ).toBeDefined();
@@ -138,6 +139,7 @@ describe("ResearchPage", () => {
       screen.getByRole("img", { name: "Buy-and-hold return +36.6% p.a." }),
     ).toBeDefined();
     expect(screen.getByText("Strategy return (p.a.)")).toBeDefined();
+    expect(screen.getByText("+61.2% p.a. (+24.6% p.a.)")).toBeDefined();
     expect(screen.getByText("Lowest drawdown")).toBeDefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("cadence=hourly");
