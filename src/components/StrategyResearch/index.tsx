@@ -68,6 +68,10 @@ interface StrategyResearchProps {
 const strategyLabels: Record<string, string> = {
   "klinger-oscillator": "Klinger Volume Oscillator",
   rsi: "RSI (14)",
+  supertrend: "Supertrend",
+  "bollinger-rsi": "Bollinger Bands + RSI",
+  "donchian-breakout": "Donchian Breakout",
+  "relative-strength-momentum": "Relative Strength Momentum",
 };
 const rangeOptions: Record<
   Cadence,
@@ -546,6 +550,16 @@ export default function StrategyResearch({
                       Klinger Volume Oscillator
                     </SelectOption>
                     <SelectOption value="rsi">RSI (14)</SelectOption>
+                    <SelectOption value="supertrend">Supertrend</SelectOption>
+                    <SelectOption value="bollinger-rsi">
+                      Bollinger Bands + RSI
+                    </SelectOption>
+                    <SelectOption value="donchian-breakout">
+                      Donchian Breakout
+                    </SelectOption>
+                    <SelectOption value="relative-strength-momentum">
+                      Relative Strength Momentum
+                    </SelectOption>
                   </SelectControl>
                 </label>
               </div>

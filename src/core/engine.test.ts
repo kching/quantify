@@ -3,10 +3,14 @@ import { analyzeSymbol, loadStrategy, strategies } from "./engine";
 import type { Candle } from "./types";
 
 describe("core strategy engine", () => {
-  it("registers Klinger and RSI as separate strategies", () => {
+  it("registers the available strategies", () => {
     expect(strategies.map((strategy) => strategy.id)).toEqual([
       "klinger-oscillator",
       "rsi",
+      "supertrend",
+      "bollinger-rsi",
+      "donchian-breakout",
+      "relative-strength-momentum",
     ]);
   });
 
@@ -27,10 +31,14 @@ describe("core strategy engine", () => {
 
     const results = analyzeSymbol("TEST.AX", candles);
 
-    expect(results).toHaveLength(2);
+    expect(results).toHaveLength(6);
     expect(results.map((result) => result.strategyId)).toEqual([
       "klinger-oscillator",
       "rsi",
+      "supertrend",
+      "bollinger-rsi",
+      "donchian-breakout",
+      "relative-strength-momentum",
     ]);
     expect(results.every((result) => result.symbol === "TEST.AX")).toBe(true);
   });

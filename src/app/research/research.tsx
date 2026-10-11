@@ -50,13 +50,9 @@ export default function ResearchPage({
         cadence: input.cadence,
         days: String(input.days),
       });
-      if (input.strategy === "rsi")
-        search.set("period", parameterTuple(input.ranges.period));
-      else {
-        search.set("fastPeriod", parameterTuple(input.ranges.fastPeriod));
-        search.set("slowPeriod", parameterTuple(input.ranges.slowPeriod));
-        search.set("signalPeriod", parameterTuple(input.ranges.signalPeriod));
-      }
+      Object.entries(input.ranges).forEach(([id, range]) => {
+        search.set(id, parameterTuple(range));
+      });
       const runs: BacktestResult[] = [];
       const runIndices: number[] = [];
       const runParams: StrategyParams[] = [];

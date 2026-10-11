@@ -74,6 +74,14 @@ interface CashPayload {
   pageCount: number;
 }
 const emptyPerformance: PerformanceSnapshots = { holdings: [], portfolio: [] };
+const strategyLabels: Record<string, string> = {
+  "klinger-oscillator": "Klinger",
+  rsi: "RSI (14)",
+  supertrend: "Supertrend",
+  "bollinger-rsi": "Bollinger Bands + RSI",
+  "donchian-breakout": "Donchian Breakout",
+  "relative-strength-momentum": "Relative Strength Momentum",
+};
 const money = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
@@ -967,9 +975,8 @@ function DashboardContent({
                                   variant="outline"
                                   className="alert-strategy"
                                 >
-                                  {alert.strategyId === "rsi"
-                                    ? "RSI (14)"
-                                    : "Klinger"}
+                                  {strategyLabels[alert.strategyId] ??
+                                    alert.strategyId}
                                 </Badge>
                               </div>
                               <small>{alert.rationale}</small>
