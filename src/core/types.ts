@@ -47,6 +47,10 @@ export interface SignalResult {
 }
 
 export interface SignalStrategy {
+  signalSeries(
+    candles: readonly Candle[],
+    params?: StrategyParams,
+  ): readonly SignalType[];
   analyze(
     symbol: string,
     candles: readonly Candle[],
@@ -166,6 +170,8 @@ export interface BacktestResult {
   maxDrawdownPct: number;
   trades: BacktestTrade[];
 }
+
+export type BacktestRunMetrics = Omit<BacktestResult, "trades">;
 
 export interface BacktestSweepSummary {
   totalRuns: number;

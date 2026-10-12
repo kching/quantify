@@ -3,6 +3,7 @@ import type {
   ParamDescriptior,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParamValue,
   StrategyParams,
 } from "../types";
@@ -50,6 +51,22 @@ function calculateRsi(candles: readonly Candle[], periodLength = 14): number[] {
 export class RsiStrategy implements SignalStrategy {
   readonly id = "rsi";
   readonly name = "RSI";
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const { period: periodParam } = params as RsiParams;
+    const rsi = calculateRsi(candles, period(periodParam, 14));
+    return rsi.map((current, index) => {
+      const prior = rsi[index - 1] ?? 50;
+      return prior <= 30 && current > 30
+        ? "BUY"
+        : prior >= 70 && current < 70
+          ? "SELL"
+          : "HOLD";
+    });
+  }
+
   get inputParams(): ParamDescriptior[] {
     return [
       {

@@ -3,6 +3,7 @@ import type {
   ParamDescriptor,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParams,
 } from "../types";
 
@@ -25,6 +26,31 @@ function momentum(
 export class RelativeStrengthMomentumStrategy implements SignalStrategy {
   readonly id = "relative-strength-momentum";
   readonly name = "Relative Strength Momentum";
+
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const { lookbackPeriod = 60, momentumThresholdPct = 3 } =
+      params as RelativeStrengthMomentumParams;
+    const period =
+      Number.isInteger(lookbackPeriod) && lookbackPeriod > 0
+        ? lookbackPeriod
+        : 60;
+    const threshold =
+      Number.isFinite(momentumThresholdPct) && momentumThresholdPct > 0
+        ? momentumThresholdPct
+        : 3;
+    return candles.map((_, index) => {
+      const current = momentum(candles, index, period);
+      const previous = momentum(candles, index - 1, period);
+      return previous <= threshold && current > threshold
+        ? "BUY"
+        : previous >= -threshold && current < -threshold
+          ? "SELL"
+          : "HOLD";
+    });
+  }
 
   get inputParams(): ParamDescriptor[] {
     return [

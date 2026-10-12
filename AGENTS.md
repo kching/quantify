@@ -8,10 +8,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
---- 
+---
 
 ## Tech Stack and Runtime
-- **Runtime & Package Manager**: [Bun](https://bun.sh) (`v1.3+`). Always use `bun <cmd>` (e.g., `bun install`, `bun test`, `bun run dev`) instead of `npm` or `pnpm`, or `yarn`
+
+- **Runtime & Package Manager**: [Bun](https://bun.sh) (`v1.3+`) is the runtime for the app, build, scripts, tests, and workers, as well as the package manager. Use `bun` commands. `bunfig.toml` forces package scripts and the Next.js CLI to run under Bun even when a CLI has a Node shebang. Use `bun --bun` when invoking the Next.js CLI directly.
+- **Import Compatibility**: Use imports that Bun can execute. Bun-supported `node:` built-ins are allowed; check Bun's compatibility documentation before adding a Node API or worker dependency. Do not add Node-only imports, loaders, or worker entrypoints that require Node to run.
 - **Frameworks**: Next.js App Router (`/app`), React, Tailwind CSS.
 - **Language**: TypeScript (`v6.0+`) with strict mode enabled.
 - **Database**: Drizzle ORM with SQLite
@@ -21,23 +23,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Code style & architecture rules
 
 ### 1. Functional & Modular Core Design
+
 - **Strategy Decoupling**: Pure core trading logic must reside in `src/core/`. Core strategies must never import Next.js modules, web APIs, or external HTTP adapters.
 - **Strict Interfaces**: All strategies must explicitly implement `SignalStrategy` (`src/core/types.ts`).
 - **Immutability**: Treat market time-series arrays (`Candle[]`) as read-only. Avoid modifying input candles in place; return fresh objects or calculations.
 
 ### 2. TypeScript Conventions
+
 - **Explicit Types**: Always define explicit return types on public methods, exports, and core engine interfaces. Avoid `any` at all costs.
 - **Types over Interfaces for Unions**: Use `interface` for object schemas (e.g., `Candle`, `PortfolioConfig`) and `type` for unions/discriminated types (e.g., `SignalType = 'BUY' | 'SELL' | 'HOLD'`).
 - **File Naming**:
-    - Core components/strategies: `klinger.strategy.ts`, `backtest.ts`, `yahoo.provider.ts`.
-    - Next.js API Routes: `app/api/<route>/route.ts`.
-    - UI Components: PascalCase (`BacktestCard.tsx`, `PortfolioTable.tsx`).
+  - Core components/strategies: `klinger.strategy.ts`, `backtest.ts`, `yahoo.provider.ts`.
+  - Next.js API Routes: `app/api/<route>/route.ts`.
+  - UI Components: PascalCase (`BacktestCard.tsx`, `PortfolioTable.tsx`).
 - **Prefer functional typescript over Object Oriented programming**: Except for Strategies which must implement an interface and Drizzle ORM related data types.
 
 ### 3. Code hygiene
+
 - **Ensure ESLint passes**
 - **Enforce code styles with Prettier**
-- **Always use Conventional Commits for commit messages**, including amended commits. Follow `<type>(<optional scope>): <imperative description>` (for example, `feat(research): add trading strategies`). Use a standard type such as `feat`, `fix`, `refactor`, `test`, `docs`, `style`, `perf`, `build`, `ci`, or `chore`. Do not create a commit with a message that does not follow this format.
+- **Always use Conventional Commits for commit messages**, including amended commits. Follow `<type>(<optional scope>): <imperative description>` (for example, `feat(research): add trading strategies`). The only allowed types are `feat`, `fix`, `chore`, and `refactor`. Do not create a commit with a message that does not follow this format.
 
 ---
 
@@ -55,3 +60,4 @@ bun test --coverage
 
 # Linting codebase
 bun run lint
+```

@@ -22,6 +22,9 @@ function strategyForSignals(
     id: "test-strategy",
     name: "Test strategy",
     inputParams: [],
+    signalSeries(candles: readonly Candle[]): SignalType[] {
+      return candles.map((_, index) => signals[index + 1] ?? "HOLD");
+    },
     analyze(symbol: string, candles: readonly Candle[]): SignalResult {
       return {
         symbol,

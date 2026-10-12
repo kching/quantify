@@ -36,13 +36,13 @@ export function runBacktest(
   let maxDrawdownPct = 0;
   let entry: Candle | null = null;
   const trades: BacktestTrade[] = [];
+  const signals =
+    candles.length > BACKTEST_START_INDEX
+      ? strategy.signalSeries(candles, params)
+      : [];
   for (let index = BACKTEST_START_INDEX; index < candles.length; index += 1) {
     const current = candles[index];
-    const signal = strategy.analyze(
-      symbol,
-      candles.slice(0, index),
-      params,
-    ).signal;
+    const signal = signals[index - 1];
     const executionPriceIsValid =
       Number.isFinite(current.open) && current.open > 0;
     if (!entry && signal === "BUY" && executionPriceIsValid)

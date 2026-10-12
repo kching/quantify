@@ -6,7 +6,7 @@ import {
   saveCandles,
 } from "@/core/db";
 import { runBacktest } from "@/core/backtest";
-import { forEachConcurrent } from "@/core/concurrent";
+import { runBacktestSweepWorkers } from "@/core/backtest-workers";
 import { strategies } from "@/core/engine";
 import { fetchYahooCandles } from "@/core/providers/yahoo.provider";
 import type { CandleInterval } from "@/core/types";
@@ -25,7 +25,6 @@ export const dynamic = "force-dynamic";
 
 type ParameterTuple = [number, number, number];
 const MAX_SWEEP_RUNS = 10_000;
-const MAX_CONCURRENT_SWEEP_RUNS = 5;
 
 function parseParameterTuple(raw: string | null): ParameterTuple | null {
   if (!raw) return null;
@@ -220,18 +219,12 @@ async function runBacktestRequest(
   let balancedPickRunIndex = 0;
   let balancedPickCagrPct = 0;
   try {
-    await forEachConcurrent(
+    await runBacktestSweepWorkers(
+      symbol,
+      window,
+      strategy.id,
       parameterSets,
-      MAX_CONCURRENT_SWEEP_RUNS,
-      async (sweepParams, index) => {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        const result = runBacktest(
-          symbol,
-          window,
-          strategy,
-          10_000,
-          sweepParams,
-        );
+      (result, sweepParams, index) => {
         publishBacktestResult(sweepBatchId, {
           runIndex: index,
           params: sweepParams,
@@ -239,23 +232,33 @@ async function runBacktestRequest(
         });
         if (completedRuns === 0)
           buyAndHoldReturnPct = result.buyAndHoldReturnPct;
-        if (result.strategyReturnPct > maximumReturn) {
+        if (
+          result.strategyReturnPct > maximumReturn ||
+          (result.strategyReturnPct === maximumReturn &&
+            index < maxReturnRunIndex)
+        ) {
           maximumReturn = result.strategyReturnPct;
           maxReturnRunIndex = index;
+          maxReturnCagrPct = annualizedReturn(result.strategyReturnPct, days);
         }
-        if (result.maxDrawdownPct < lowestDrawdown) {
+        if (
+          result.maxDrawdownPct < lowestDrawdown ||
+          (result.maxDrawdownPct === lowestDrawdown &&
+            index < lowestDrawdownRunIndex)
+        ) {
           lowestDrawdown = result.maxDrawdownPct;
           lowestDrawdownRunIndex = index;
         }
         const strategyCagr = annualizedReturn(result.strategyReturnPct, days);
         const balanceScore = strategyCagr + result.maxDrawdownPct;
-        if (balanceScore > bestBalanceScore) {
+        if (
+          balanceScore > bestBalanceScore ||
+          (balanceScore === bestBalanceScore && index < balancedPickRunIndex)
+        ) {
           bestBalanceScore = balanceScore;
           balancedPickRunIndex = index;
           balancedPickCagrPct = strategyCagr;
         }
-        if (result.strategyReturnPct === maximumReturn)
-          maxReturnCagrPct = strategyCagr;
         completedRuns += 1;
       },
     );

@@ -3,6 +3,7 @@ import type {
   ParamDescriptior,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParamValue,
   StrategyParams,
 } from "../types";
@@ -35,6 +36,59 @@ function ema(values: readonly number[], period: number): number[] {
 export class KlingerStrategy implements SignalStrategy {
   readonly id = "klinger-oscillator";
   readonly name = "Klinger Volume Oscillator";
+
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const { fastPeriod, slowPeriod, signalPeriod } = params as KlingerParams;
+    const safe = candles.filter(
+      (candle) =>
+        Number.isFinite(candle.close) && Number.isFinite(candle.volume),
+    );
+    const typical = safe.map(
+      (candle) => (candle.high + candle.low + candle.close) / 3,
+    );
+    const trend = safe.map((_, index) =>
+      index === 0 || typical[index] >= typical[index - 1] ? 1 : -1,
+    );
+    const dm = safe.map((candle) => candle.high - candle.low);
+    const cm: number[] = [];
+    for (let index = 0; index < dm.length; index += 1)
+      cm.push(
+        index > 0 && trend[index] === trend[index - 1]
+          ? cm[index - 1] + dm[index]
+          : (index > 0 ? dm[index - 1] : 0) + dm[index],
+      );
+    const force = safe.map((candle, index) =>
+      cm[index] === 0
+        ? 0
+        : candle.volume *
+          Math.abs((2 * dm[index]) / cm[index] - 1) *
+          trend[index] *
+          100,
+    );
+    const fast = ema(force, period(fastPeriod, 34));
+    const slow = ema(force, period(slowPeriod, 55));
+    const oscillator = fast.map((value, index) => value - slow[index]);
+    const signalLine = ema(oscillator, period(signalPeriod, 13));
+    const safeSignals = oscillator.map((value, index): SignalType => {
+      const previous =
+        index > 0 ? oscillator[index - 1] - signalLine[index - 1] : 0;
+      const current = value - signalLine[index];
+      return previous <= 0 && current > 0
+        ? "BUY"
+        : previous >= 0 && current < 0
+          ? "SELL"
+          : "HOLD";
+    });
+    let safeIndex = -1;
+    return candles.map((candle) => {
+      if (Number.isFinite(candle.close) && Number.isFinite(candle.volume))
+        safeIndex += 1;
+      return safeSignals[safeIndex] ?? "HOLD";
+    });
+  }
   get inputParams(): ParamDescriptior[] {
     return [
       {

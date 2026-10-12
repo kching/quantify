@@ -3,6 +3,7 @@ import type {
   ParamDescriptor,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParams,
 } from "../types";
 
@@ -34,6 +35,61 @@ function getAtr(candles: readonly Candle[], period: number): number[] {
 export class SupertrendStrategy implements SignalStrategy {
   readonly id = "supertrend";
   readonly name = "Supertrend";
+
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const { atrPeriod = 10, multiplier = 3 } = params as SupertrendParams;
+    const period =
+      Number.isInteger(atrPeriod) && atrPeriod > 0 ? atrPeriod : 10;
+    const factor =
+      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 3;
+    const atr = getAtr(candles, period);
+    const upper = Array<number>(candles.length).fill(0);
+    const lower = Array<number>(candles.length).fill(0);
+    const direction = Array<number>(candles.length).fill(-1);
+    const signals = Array<SignalType>(candles.length).fill("HOLD");
+
+    for (let index = period - 1; index < candles.length; index += 1) {
+      const candle = candles[index]!;
+      const midpoint = (candle.high + candle.low) / 2;
+      const basicUpper = midpoint + factor * atr[index]!;
+      const basicLower = midpoint - factor * atr[index]!;
+      const previousUpper = upper[index - 1] ?? basicUpper;
+      const previousLower = lower[index - 1] ?? basicLower;
+      const previousClose = candles[index - 1]?.close ?? candle.close;
+      upper[index] =
+        index === period - 1 ||
+        basicUpper < previousUpper ||
+        previousClose > previousUpper
+          ? basicUpper
+          : previousUpper;
+      lower[index] =
+        index === period - 1 ||
+        basicLower > previousLower ||
+        previousClose < previousLower
+          ? basicLower
+          : previousLower;
+      const prior = direction[index - 1] ?? -1;
+      const current =
+        index === period - 1
+          ? -1
+          : prior < 0 && candle.close > previousUpper
+            ? 1
+            : prior > 0 && candle.close < previousLower
+              ? -1
+              : prior;
+      direction[index] = current;
+      signals[index] =
+        prior < 0 && current > 0
+          ? "BUY"
+          : prior > 0 && current < 0
+            ? "SELL"
+            : "HOLD";
+    }
+    return signals;
+  }
 
   get inputParams(): ParamDescriptor[] {
     return [

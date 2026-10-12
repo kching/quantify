@@ -3,6 +3,7 @@ import type {
   ParamDescriptor,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParams,
 } from "../types";
 
@@ -33,6 +34,64 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 export class BollingerMacdStrategy implements SignalStrategy {
   readonly id = "bollinger-macd";
   readonly name = "Bollinger Bands + MACD";
+
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const {
+      bollingerPeriod = 20,
+      stdDevMultiplier = 2,
+      fastPeriod = 12,
+      slowPeriod = 26,
+      signalPeriod = 9,
+    } = params as BollingerMacdParams;
+    const bandPeriod = Math.max(2, positiveInteger(bollingerPeriod, 20));
+    const fast = positiveInteger(fastPeriod, 12);
+    const slow = Math.max(fast + 1, positiveInteger(slowPeriod, 26));
+    const signalLength = positiveInteger(signalPeriod, 9);
+    const deviationFactor =
+      Number.isFinite(stdDevMultiplier) && stdDevMultiplier > 0
+        ? stdDevMultiplier
+        : 2;
+    const closes = candles.map(({ close }) => close);
+    const fastValues = ema(closes, fast);
+    const slowValues = ema(closes, slow);
+    const macd = fastValues.map(
+      (value, valueIndex) => value - slowValues[valueIndex]!,
+    );
+    const signalLine = ema(macd, signalLength);
+    const signals = Array<SignalType>(candles.length).fill("HOLD");
+    let previousUpper = 0;
+    let previousLower = 0;
+    for (let index = bandPeriod - 1; index < candles.length; index += 1) {
+      const values = closes.slice(index - bandPeriod + 1, index + 1);
+      const mean = values.reduce((sum, value) => sum + value, 0) / bandPeriod;
+      const variance =
+        values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+        bandPeriod;
+      const offset = Math.sqrt(variance) * deviationFactor;
+      const upper = mean + offset;
+      const lower = mean - offset;
+      if (index >= bandPeriod) {
+        const candle = candles[index]!;
+        const previous = candles[index - 1]!;
+        signals[index] =
+          candle.close > upper &&
+          previous.close <= previousUpper &&
+          macd[index]! > signalLine[index]!
+            ? "BUY"
+            : candle.close < lower &&
+                previous.close >= previousLower &&
+                macd[index]! < signalLine[index]!
+              ? "SELL"
+              : "HOLD";
+      }
+      previousUpper = upper;
+      previousLower = lower;
+    }
+    return signals;
+  }
 
   get inputParams(): ParamDescriptor[] {
     return [

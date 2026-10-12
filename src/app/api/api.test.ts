@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import type { Candle, Portfolio } from "@/core/types";
+import type {
+  BacktestRunMetrics,
+  Candle,
+  Portfolio,
+  StrategyParams,
+} from "@/core/types";
 
 const seededPortfolios = [
   {
@@ -152,6 +157,26 @@ const runBacktest = mock(() => ({
   strategyId: "klinger-oscillator",
   trades: [],
 }));
+const runBacktestSweepWorkers = mock(
+  async (
+    _symbol: string,
+    _sweepCandles: readonly Candle[],
+    _strategyId: string,
+    parameterSets: readonly StrategyParams[],
+    onResult: (
+      result: BacktestRunMetrics,
+      params: StrategyParams,
+      runIndex: number,
+    ) => void,
+  ): Promise<void> => {
+    for (let runIndex = parameterSets.length - 1; runIndex >= 0; runIndex -= 1)
+      onResult(
+        runBacktest() as unknown as BacktestRunMetrics,
+        parameterSets[runIndex]!,
+        runIndex,
+      );
+  },
+);
 const fetchYahooCandles = mock(async () => [] as Candle[]);
 
 mock.module("@/core/db", () => ({
@@ -183,6 +208,7 @@ mock.module("@/core/performance.service", () => ({
   capturePortfolioPerformance,
 }));
 mock.module("@/core/backtest", () => ({ runBacktest }));
+mock.module("@/core/backtest-workers", () => ({ runBacktestSweepWorkers }));
 mock.module("@/core/engine", () => ({
   strategies: [
     {
@@ -290,6 +316,7 @@ describe("API route handlers", () => {
       deleteCashTransaction,
       scanPortfolio,
       runBacktest,
+      runBacktestSweepWorkers,
       fetchYahooCandles,
     ])
       handler.mockClear();

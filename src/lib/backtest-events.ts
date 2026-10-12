@@ -1,9 +1,9 @@
-import type { BacktestResult, StrategyParams } from "@/core/types";
+import type { BacktestRunMetrics, StrategyParams } from "@/core/types";
 
 export interface BacktestRunEvent {
   runIndex: number;
   params: StrategyParams;
-  result: BacktestResult;
+  result: BacktestRunMetrics;
 }
 
 interface BacktestEventChannel {

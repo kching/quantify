@@ -3,6 +3,7 @@ import type {
   ParamDescriptor,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParams,
 } from "../types";
 
@@ -39,6 +40,50 @@ function rsiValues(candles: readonly Candle[], period: number): number[] {
 export class BollingerRsiStrategy implements SignalStrategy {
   readonly id = "bollinger-rsi";
   readonly name = "Bollinger Bands + RSI";
+
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const {
+      bollingerPeriod = 20,
+      stdDevMultiplier = 2,
+      rsiPeriod = 14,
+    } = params as BollingerRsiParams;
+    const bandPeriod =
+      Number.isInteger(bollingerPeriod) && bollingerPeriod > 1
+        ? bollingerPeriod
+        : 20;
+    const deviationFactor =
+      Number.isFinite(stdDevMultiplier) && stdDevMultiplier > 0
+        ? stdDevMultiplier
+        : 2;
+    const strengthPeriod =
+      Number.isInteger(rsiPeriod) && rsiPeriod > 0 ? rsiPeriod : 14;
+    const rsi = rsiValues(candles, strengthPeriod);
+    const signals = Array<SignalType>(candles.length).fill("HOLD");
+    for (let index = bandPeriod - 1; index < candles.length; index += 1) {
+      const values = candles
+        .slice(index - bandPeriod + 1, index + 1)
+        .map(({ close }) => close);
+      const mean = values.reduce((sum, value) => sum + value, 0) / bandPeriod;
+      const variance =
+        values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+        bandPeriod;
+      const deviation = Math.sqrt(variance);
+      const lowerBand = mean - deviationFactor * deviation;
+      const upperBand = mean + deviationFactor * deviation;
+      const close = candles[index]!.close;
+      const currentRsi = rsi[index] ?? 50;
+      signals[index] =
+        close <= lowerBand && currentRsi <= 30
+          ? "BUY"
+          : close >= upperBand && currentRsi >= 70
+            ? "SELL"
+            : "HOLD";
+    }
+    return signals;
+  }
 
   get inputParams(): ParamDescriptor[] {
     return [

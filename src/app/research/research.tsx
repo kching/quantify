@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type {
-  BacktestResult,
+  BacktestRunMetrics,
   BacktestSweepSummary,
   Portfolio,
   StrategyParams,
@@ -49,7 +49,7 @@ export default function ResearchPage({
       Object.entries(input.ranges).forEach(([id, range]) => {
         search.set(id, parameterTuple(range));
       });
-      const runs: BacktestResult[] = [];
+      const runs: BacktestRunMetrics[] = [];
       const runIndices: number[] = [];
       const runParams: StrategyParams[] = [];
       let summary: BacktestSweepSummary | null = null;
@@ -75,7 +75,7 @@ export default function ResearchPage({
             const run = JSON.parse((event as MessageEvent<string>).data) as {
               runIndex: number;
               params: StrategyParams;
-              result: BacktestResult;
+              result: BacktestRunMetrics;
             };
             if (
               !Number.isInteger(run.runIndex) ||

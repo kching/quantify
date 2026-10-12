@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { LoaderCircle, Save } from "lucide-react";
 import { strategies } from "@/core/engine";
 import type {
-  BacktestResult,
+  BacktestRunMetrics,
   BacktestSweepSummary,
   HoldingStrategy,
   ParamDescriptor,
@@ -47,7 +47,7 @@ export interface StrategyResearchInput {
   ranges: StrategyRanges;
 }
 export interface StrategySweepResult extends StrategyResearchInput {
-  runs: BacktestResult[];
+  runs: BacktestRunMetrics[];
   runIndices: number[];
   runParams: StrategyParams[];
   summary?: BacktestSweepSummary;
@@ -200,7 +200,7 @@ function annualizedComparison(
   return `${annualizedPercent(strategyCagr)} (${annualizedPercent(benchmarkDifference)})`;
 }
 function strategyReturnComparison(
-  run: BacktestResult,
+  run: BacktestRunMetrics,
   days: number,
   buyAndHoldReturnPct?: number,
 ): string {
@@ -259,7 +259,7 @@ export default function StrategyResearch({
   const buyAndHoldReturn = result
     ? annualizedReturn(buyAndHoldReturnPct, result.days)
     : 0;
-  const strategyCagr = (run: BacktestResult): number =>
+  const strategyCagr = (run: BacktestRunMetrics): number =>
     annualizedReturn(run.strategyReturnPct, result?.days ?? days);
   const returnScale = result
     ? chartScale([...result.runs.map(strategyCagr), buyAndHoldReturn])
@@ -675,7 +675,7 @@ export default function StrategyResearch({
 
   const outcomeCards: Array<{
     label: string;
-    run?: BacktestResult;
+    run?: BacktestRunMetrics;
     type: string;
   }> = [
     { label: "Buy-and-hold return", run: ranked[0], type: "buy-hold" },

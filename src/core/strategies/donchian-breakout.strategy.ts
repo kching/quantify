@@ -3,6 +3,7 @@ import type {
   ParamDescriptor,
   SignalResult,
   SignalStrategy,
+  SignalType,
   StrategyParams,
 } from "../types";
 
@@ -11,6 +12,40 @@ type DonchianParams = StrategyParams & { lookbackPeriod?: number };
 export class DonchianBreakoutStrategy implements SignalStrategy {
   readonly id = "donchian-breakout";
   readonly name = "Donchian Breakout";
+
+  signalSeries(
+    candles: readonly Candle[],
+    params: StrategyParams = {},
+  ): SignalType[] {
+    const { lookbackPeriod = 20 } = params as DonchianParams;
+    const period =
+      Number.isInteger(lookbackPeriod) && lookbackPeriod > 0
+        ? lookbackPeriod
+        : 20;
+    const signals = Array<SignalType>(candles.length).fill("HOLD");
+    let previousUpper = 0;
+    let previousLower = 0;
+    for (let index = period; index < candles.length; index += 1) {
+      let upper = Number.NEGATIVE_INFINITY;
+      let lower = Number.POSITIVE_INFINITY;
+      for (let offset = index - period; offset < index; offset += 1) {
+        upper = Math.max(upper, candles[offset]!.high);
+        lower = Math.min(lower, candles[offset]!.low);
+      }
+      const candle = candles[index]!;
+      const previous = candles[index - 1];
+      if (index > period && previous)
+        signals[index] =
+          candle.close > upper && previous.close <= previousUpper
+            ? "BUY"
+            : candle.close < lower && previous.close >= previousLower
+              ? "SELL"
+              : "HOLD";
+      previousUpper = upper;
+      previousLower = lower;
+    }
+    return signals;
+  }
 
   get inputParams(): ParamDescriptor[] {
     return [

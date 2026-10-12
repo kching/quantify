@@ -18,7 +18,6 @@ const runEvent = (runIndex: number) => ({
     totalReturnPct: 3,
     winRatePct: 50,
     maxDrawdownPct: 1,
-    trades: [],
   },
 });
 
