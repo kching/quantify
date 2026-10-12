@@ -30,6 +30,26 @@ interface TelegramPreferences {
   botToken: string;
   chatId: string;
 }
+
+interface TelegramApiResponse {
+  error?: string;
+  welcomeMessageError?: string;
+}
+
+async function readTelegramResponse(
+  response: Response,
+): Promise<TelegramApiResponse> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object" && !Array.isArray(body))
+      return body as TelegramApiResponse;
+  } catch {
+    // Give the user the HTTP status when an upstream error returned HTML/text.
+  }
+  throw new Error(
+    `The server returned an unreadable response (HTTP ${response.status}).`,
+  );
+}
 interface PreferencesProps {
   user: Pick<UserProfile, "name" | "image">;
   initialPreferences: UserPreferences;
@@ -74,10 +94,7 @@ export default function Preferences({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preferences: { telegram } }),
       });
-      const body = (await response.json()) as {
-        error?: string;
-        welcomeMessageError?: string;
-      };
+      const body = await readTelegramResponse(response);
       if (!response.ok)
         throw new Error(body.error ?? "Unable to save Telegram settings.");
       setMessage(
@@ -110,7 +127,7 @@ export default function Preferences({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(telegram),
       });
-      const body = (await response.json()) as { error?: string };
+      const body = await readTelegramResponse(response);
       if (!response.ok)
         throw new Error(
           body.error ?? "Unable to send a Telegram test message.",
@@ -140,7 +157,7 @@ export default function Preferences({
           preferences: { telegram: { botToken: "", chatId: "" } },
         }),
       });
-      const body = (await response.json()) as { error?: string };
+      const body = await readTelegramResponse(response);
       if (!response.ok)
         throw new Error(body.error ?? "Unable to clear Telegram settings.");
       setTelegram({ botToken: "", chatId: "" });
@@ -275,8 +292,9 @@ export default function Preferences({
                   />
                 </label>
                 <p className="telegram-field-help">
-                  Start a conversation with your bot and provide the chat ID it
-                  should message.
+                  Open your bot in Telegram and tap Start (or send /start)
+                  before connecting. Telegram won’t let a bot start a private
+                  chat. Then enter the chat ID it should message.
                 </p>
                 <div className="telegram-form-actions">
                   <Button
