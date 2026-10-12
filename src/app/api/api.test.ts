@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type {
+  BacktestResult,
   BacktestRunMetrics,
   Candle,
   Portfolio,
@@ -169,12 +170,15 @@ const runBacktestSweepWorkers = mock(
       runIndex: number,
     ) => void,
   ): Promise<void> => {
-    for (let runIndex = parameterSets.length - 1; runIndex >= 0; runIndex -= 1)
-      onResult(
-        runBacktest() as unknown as BacktestRunMetrics,
-        parameterSets[runIndex]!,
-        runIndex,
-      );
+    for (
+      let runIndex = parameterSets.length - 1;
+      runIndex >= 0;
+      runIndex -= 1
+    ) {
+      const { trades, ...metrics } = runBacktest() as unknown as BacktestResult;
+      void trades;
+      onResult(metrics, parameterSets[runIndex]!, runIndex);
+    }
   },
 );
 const fetchYahooCandles = mock(async () => [] as Candle[]);
@@ -699,6 +703,20 @@ describe("API route handlers", () => {
   });
 
   describe("/api/backtest", () => {
+    const seedCandles = (): void => {
+      const now = Date.now();
+      candles = Array.from({ length: 80 }, (_, index) => ({
+        symbol: "MQG.AX",
+        interval: "1d",
+        timestamp: now - (79 - index) * 86_400_000,
+        open: 100,
+        high: 102,
+        low: 99,
+        close: 101,
+        volume: 1_000,
+      }));
+    };
+
     it("rejects an invalid ticker or strategy", async () => {
       expect(
         (await backtestRoute.GET(request("/api/backtest?symbol=bad%20ticker")))
@@ -722,17 +740,7 @@ describe("API route handlers", () => {
     });
 
     it("uses cached candles for a valid backtest", async () => {
-      const now = Date.now();
-      candles = Array.from({ length: 80 }, (_, index) => ({
-        symbol: "MQG.AX",
-        interval: "1d",
-        timestamp: now - (79 - index) * 86_400_000,
-        open: 100,
-        high: 102,
-        low: 99,
-        close: 101,
-        volume: 1_000,
-      }));
+      seedCandles();
       const response = await backtestRoute.GET(
         request("/api/backtest?symbol=MQG.AX&days=365"),
       );
@@ -747,17 +755,7 @@ describe("API route handlers", () => {
     });
 
     it("streams sweep events and returns a summary after the batch completes", async () => {
-      const now = Date.now();
-      candles = Array.from({ length: 80 }, (_, index) => ({
-        symbol: "MQG.AX",
-        interval: "1d",
-        timestamp: now - (79 - index) * 86_400_000,
-        open: 100,
-        high: 102,
-        low: 99,
-        close: 101,
-        volume: 1_000,
-      }));
+      seedCandles();
       runBacktest.mockClear();
       runBacktest.mockImplementation(() => ({
         symbol: "TEST.AX",
@@ -828,8 +826,91 @@ describe("API route handlers", () => {
       expect(eventRuns.map((run) => run?.runIndex).sort()).toEqual([
         0, 1, 2, 3, 4, 5, 6, 7,
       ]);
+      expect(eventRuns.every((run) => !("trades" in run.result))).toBe(true);
       await eventReader.cancel();
       expect(runBacktest).toHaveBeenCalledTimes(8);
+    });
+
+    it("rejects malformed sweep ranges and missing batch ids", async () => {
+      const invalidRange = encodeURIComponent("[1,5,-1]");
+      const validRange = encodeURIComponent("[1,1,0]");
+      expect(
+        (
+          await backtestRoute.GET(
+            request(`/api/backtest?symbol=MQG.AX&fastPeriod=${invalidRange}`),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await backtestRoute.GET(
+            request(
+              `/api/backtest?symbol=MQG.AX&fastPeriod=${validRange}&slowPeriod=${validRange}&signalPeriod=${validRange}`,
+            ),
+          )
+        ).status,
+      ).toBe(400);
+      expect(runBacktestSweepWorkers).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid sweep request bodies and event batch ids", async () => {
+      const malformed = await backtestRoute.POST(
+        new Request("http://localhost/api/backtest?symbol=MQG.AX", {
+          method: "POST",
+          body: "{",
+        }),
+      );
+      expect(malformed.status).toBe(400);
+      expect(await payload(malformed)).toEqual({
+        error: "Request body must be valid JSON.",
+      });
+      expect(
+        (
+          await backtestRoute.POST(
+            request("/api/backtest?symbol=MQG.AX", "POST", {
+              batchId: "invalid id",
+            }),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await backtestEventsRoute.GET(
+            request("/api/backtest/events?batchId=invalid_id"),
+          )
+        ).status,
+      ).toBe(400);
+    });
+
+    it("accepts a sweep with more than 10,000 parameter sets", async () => {
+      seedCandles();
+      const wide = encodeURIComponent("[1,10001,1]");
+      const fixed = encodeURIComponent("[1,1,0]");
+      runBacktestSweepWorkers.mockImplementationOnce(async () => {});
+      const response = await backtestRoute.POST(
+        request(
+          `/api/backtest?symbol=MQG.AX&fastPeriod=${wide}&slowPeriod=${fixed}&signalPeriod=${fixed}`,
+          "POST",
+          { batchId: "large-sweep" },
+        ),
+      );
+      expect(response.status).toBe(200);
+      expect(runBacktestSweepWorkers.mock.calls[0]?.[3]).toHaveLength(10_001);
+    });
+
+    it("reports worker failures as API errors", async () => {
+      seedCandles();
+      const fixed = encodeURIComponent("[1,1,0]");
+      runBacktestSweepWorkers.mockRejectedValueOnce(new Error("worker failed"));
+      const response = await backtestRoute.POST(
+        request(
+          `/api/backtest?symbol=MQG.AX&fastPeriod=${fixed}&slowPeriod=${fixed}&signalPeriod=${fixed}`,
+          "POST",
+          { batchId: "failed-sweep" },
+        ),
+      );
+      expect(response.status).toBe(500);
+      expect(await payload(response)).toEqual({ error: "worker failed" });
     });
 
     it("returns 502 when history cannot be fetched", async () => {

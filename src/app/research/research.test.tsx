@@ -222,6 +222,18 @@ describe("ResearchPage", () => {
       screen.getByRole("button", { name: "Running sweep…" }),
     ).toBeDefined();
     await screen.findByRole("button", { name: "Select run 2" });
+    const firstPoint = screen.getByRole("button", { name: "Select run 1" });
+    const secondPoint = screen.getByRole("button", { name: "Select run 2" });
+    expect(firstPoint.getAttribute("aria-pressed")).toBe("true");
+    expect(secondPoint.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(secondPoint);
+    expect(firstPoint.getAttribute("aria-pressed")).toBe("false");
+    expect(secondPoint.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      screen
+        .getAllByRole("button", { name: /Select run \d+/ })
+        .filter((point) => point.classList.contains("selected")),
+    ).toHaveLength(1);
     expect(
       screen.getAllByText("+61.2% p.a. (+24.6% p.a.)").length,
     ).toBeGreaterThan(0);

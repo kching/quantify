@@ -5,6 +5,14 @@ import { RsiStrategy } from "./strategies/rsi.strategy";
 import type { BacktestRunMetrics, Candle, StrategyParams } from "./types";
 
 describe("backtest worker pool", () => {
+  it("returns without starting workers when there are no parameter sets", async () => {
+    let resultCount = 0;
+    await runBacktestSweepWorkers("TEST.AX", [], "rsi", [], () => {
+      resultCount += 1;
+    });
+    expect(resultCount).toBe(0);
+  });
+
   it("returns each parameter result from a worker", async () => {
     const candles: Candle[] = Array.from({ length: 90 }, (_, index) => {
       const close = 100 + Math.sin(index / 3) * 10;
@@ -19,11 +27,10 @@ describe("backtest worker pool", () => {
         volume: 1_000,
       };
     });
-    const parameterSets: StrategyParams[] = [
-      { period: 5 },
-      { period: 10 },
-      { period: 14 },
-    ];
+    const parameterSets: StrategyParams[] = Array.from(
+      { length: 8 },
+      (_, index) => ({ period: 5 + index }),
+    );
     const received = new Map<number, BacktestRunMetrics>();
 
     await runBacktestSweepWorkers(
@@ -59,5 +66,25 @@ describe("backtest worker pool", () => {
       });
       expect(received.get(index)).not.toHaveProperty("trades");
     }
+  });
+
+  it("rejects when a worker cannot load its strategy", async () => {
+    await expect(
+      runBacktestSweepWorkers(
+        "TEST.AX",
+        [],
+        "missing-strategy",
+        [{}],
+        () => {},
+      ),
+    ).rejects.toThrow("The backtest worker could not load its strategy.");
+  });
+
+  it("stops the sweep when the result callback fails", async () => {
+    await expect(
+      runBacktestSweepWorkers("TEST.AX", [], "rsi", [{}], () => {
+        throw new Error("Result delivery failed.");
+      }),
+    ).rejects.toThrow("Result delivery failed.");
   });
 });
