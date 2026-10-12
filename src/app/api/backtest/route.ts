@@ -24,7 +24,6 @@ import { getCurrentUser } from "@/lib/current-user";
 export const dynamic = "force-dynamic";
 
 type ParameterTuple = [number, number, number];
-const MAX_SWEEP_RUNS = 10_000;
 
 function parseParameterTuple(raw: string | null): ParameterTuple | null {
   if (!raw) return null;
@@ -83,14 +82,6 @@ function sweepParameterSets(
   const valuesByParameter = requested.map(
     ({ id, tuple }) => [id, parameterValues(tuple as ParameterTuple)] as const,
   );
-  const runCount = valuesByParameter.reduce(
-    (count, [, values]) => count * values.length,
-    1,
-  );
-  if (runCount > MAX_SWEEP_RUNS)
-    throw new Error(
-      `Sweep is limited to ${MAX_SWEEP_RUNS.toLocaleString()} runs.`,
-    );
   return valuesByParameter.reduce<StrategyParams[]>(
     (sets, [id, values]) =>
       sets.flatMap((params) =>

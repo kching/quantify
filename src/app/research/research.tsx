@@ -52,8 +52,10 @@ export default function ResearchPage({
       const runs: BacktestRunMetrics[] = [];
       const runIndices: number[] = [];
       const runParams: StrategyParams[] = [];
+      const seenRunIndices = new Set<number>();
       let summary: BacktestSweepSummary | null = null;
       let startRequested = false;
+      let lastResultUpdate = 0;
       await new Promise<void>((resolve, reject) => {
         const finishIfComplete = (): void => {
           if (!summary || runs.length !== summary.completedRuns) return;
@@ -80,18 +82,23 @@ export default function ResearchPage({
             if (
               !Number.isInteger(run.runIndex) ||
               run.runIndex < 0 ||
-              runIndices.includes(run.runIndex)
+              seenRunIndices.has(run.runIndex)
             )
               return;
+            seenRunIndices.add(run.runIndex);
             runs.push(run.result);
             runIndices.push(run.runIndex);
             runParams.push(run.params);
-            setResult({
-              ...input,
-              runs: [...runs],
-              runIndices: [...runIndices],
-              runParams: [...runParams],
-            });
+            const now = performance.now();
+            if (runs.length === 1 || now - lastResultUpdate >= 250) {
+              lastResultUpdate = now;
+              setResult({
+                ...input,
+                runs: [...runs],
+                runIndices: [...runIndices],
+                runParams: [...runParams],
+              });
+            }
             finishIfComplete();
           } catch (cause) {
             reject(

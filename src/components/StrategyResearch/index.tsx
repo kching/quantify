@@ -802,6 +802,7 @@ export default function StrategyResearch({
                       <button
                         type="button"
                         aria-label={`Select run ${index + 1}`}
+                        aria-pressed={isSelected}
                         key={`${run.strategyReturnPct}-${index}`}
                         className={`scatter-point ${colorClass}`}
                         style={{ left: `${x}%`, top: `${y}%` }}

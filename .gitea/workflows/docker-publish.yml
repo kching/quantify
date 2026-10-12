@@ -99,6 +99,7 @@ jobs:
 
           echo "registry=$(get_var registry)" >> "$GITHUB_OUTPUT"
           echo "application_name=$(get_var application_name)" >> "$GITHUB_OUTPUT"
+          echo "docker_retention_count=$(get_var docker_retention_count)" >> "$GITHUB_OUTPUT"
 
       - name: Extract image metadata
         id: meta
@@ -142,3 +143,13 @@ jobs:
           git tag -a "release-v${RELEASE_VERSION}" -m "Release v${RELEASE_VERSION}"
           git push origin "HEAD:${REF_NAME}"
           git push origin "release-v${RELEASE_VERSION}"
+
+      - name: Delete oldest Docker images beyond retention
+        env:
+          DOCKER_REGISTRY: ${{ steps.vars.outputs.registry }}
+          DOCKER_IMAGE: ${{ steps.vars.outputs.application_name }}
+          DOCKER_RETENTION_COUNT: ${{ steps.vars.outputs.docker_retention_count }}
+          PUBLISHED_VERSION: ${{ steps.version.outputs.version }}
+          DOCKER_REGISTRY_USERNAME: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+        run: bun .gitea/scripts/prune-docker-images.ts
