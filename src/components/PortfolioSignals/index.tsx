@@ -169,8 +169,8 @@ export default function Index({
                 const row = scanned.get(holding.symbol);
                 const latestSignal = row?.daily[0];
                 const latestPrice =
-                  latestSignal?.price ??
                   row?.hourlyCandles.at(-1)?.close ??
+                  latestSignal?.price ??
                   row?.dailyCandles.at(-1)?.close;
                 const expanded = expandedSymbols.has(holding.symbol);
                 const toggleExpanded = (): void =>

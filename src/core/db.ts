@@ -534,6 +534,28 @@ export async function listPortfolios(
   );
 }
 
+export async function listAllPortfolios(): Promise<
+  Array<Portfolio & { holdings: PortfolioHolding[] }>
+> {
+  await ensureDatabase();
+  const rows = await db
+    .select()
+    .from(portfolios)
+    .orderBy(portfolios.createdAt)
+    .all();
+  return Promise.all(
+    rows.map(async (portfolio) => ({
+      ...portfolio,
+      holdings: await db
+        .select({ symbol: holdings.symbol, addedAt: holdings.addedAt })
+        .from(holdings)
+        .where(eq(holdings.portfolioId, portfolio.id))
+        .orderBy(holdings.symbol)
+        .all(),
+    })),
+  );
+}
+
 export async function createPortfolio(
   name: string,
   userId = "admin",

@@ -7,6 +7,7 @@ import {
   listHoldingStrategies,
   listPortfolioTradeSymbols,
   listPortfolios,
+  listAllPortfolios,
   recordAlert,
   recordSignalStateChange,
   saveCandles,
@@ -149,7 +150,7 @@ export async function updateAllPortfolioDailyCandles(): Promise<{
   symbolCount: number;
   warnings: string[];
 }> {
-  const portfolios = await listPortfolios();
+  const portfolios = await listAllPortfolios();
   const symbols = new Set<string>();
   for (const portfolio of portfolios) {
     portfolio.holdings.forEach(({ symbol }) => symbols.add(symbol));
@@ -391,7 +392,7 @@ export async function updateAllPortfolioMarkets(): Promise<{
   symbolCount: number;
   warnings: string[];
 }> {
-  const portfolios = await listPortfolios();
+  const portfolios = await listAllPortfolios();
   const ownersBySymbol = new Map<
     string,
     Array<{ id: number; userId: string; holdingStrategies: HoldingStrategy[] }>
