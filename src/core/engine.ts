@@ -4,6 +4,7 @@ import { SupertrendStrategy } from "./strategies/supertrend.strategy";
 import { BollingerRsiStrategy } from "./strategies/bollinger-rsi.strategy";
 import { DonchianBreakoutStrategy } from "./strategies/donchian-breakout.strategy";
 import { RelativeStrengthMomentumStrategy } from "./strategies/relative-strength-momentum.strategy";
+import { BollingerMacdStrategy } from "./strategies/bollinger-macd.strategy";
 import type { Candle, SignalResult, SignalStrategy } from "./types";
 
 export const strategies: readonly SignalStrategy[] = [
@@ -13,6 +14,7 @@ export const strategies: readonly SignalStrategy[] = [
   new BollingerRsiStrategy(),
   new DonchianBreakoutStrategy(),
   new RelativeStrengthMomentumStrategy(),
+  new BollingerMacdStrategy(),
 ];
 
 const strategyLoaders: Record<string, () => Promise<SignalStrategy>> = {
@@ -34,6 +36,10 @@ const strategyLoaders: Record<string, () => Promise<SignalStrategy>> = {
     new (
       await import("./strategies/relative-strength-momentum.strategy")
     ).RelativeStrengthMomentumStrategy(),
+  "bollinger-macd": async () =>
+    new (
+      await import("./strategies/bollinger-macd.strategy")
+    ).BollingerMacdStrategy(),
 };
 
 export async function loadStrategy(

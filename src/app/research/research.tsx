@@ -4,7 +4,6 @@ import { useState } from "react";
 import type {
   BacktestResult,
   BacktestSweepSummary,
-  HoldingStrategy,
   Portfolio,
   StrategyParams,
   UserProfile,
@@ -19,18 +18,15 @@ import { ToastProvider } from "@/components/ui/toast";
 export default function ResearchPage({
   user,
   portfolios = [],
-  initialStrategies = [],
 }: {
   user?: Pick<UserProfile, "name" | "image">;
   portfolios?: Array<
     Portfolio & { holdings: Array<{ symbol: string; addedAt: number }> }
   >;
-  initialStrategies?: HoldingStrategy[];
 }): React.JSX.Element {
   const [result, setResult] = useState<StrategySweepResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [savedStrategies, setSavedStrategies] = useState(initialStrategies);
 
   async function runBacktest(input: StrategyResearchInput): Promise<boolean> {
     setBusy(true);
@@ -206,20 +202,7 @@ export default function ResearchPage({
               result={result}
               busy={busy}
               portfolios={portfolios}
-              savedStrategies={savedStrategies}
               onRun={runBacktest}
-              onBack={() => setResult(null)}
-              onSaved={(saved) =>
-                setSavedStrategies((current) => [
-                  ...current.filter((item) => item.id !== saved.id),
-                  saved,
-                ])
-              }
-              onDeleted={(_portfolioId, _symbol, id) =>
-                setSavedStrategies((current) =>
-                  current.filter((item) => item.id !== id),
-                )
-              }
             />
           </ToastProvider>
           <footer className="page-footer">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, LoaderCircle, Save, Trash2 } from "lucide-react";
+import { LoaderCircle, Save } from "lucide-react";
 import { strategies } from "@/core/engine";
 import type {
   BacktestResult,
@@ -58,21 +58,8 @@ interface StrategyResearchProps {
   portfolios?: Array<
     Portfolio & { holdings: Array<{ symbol: string; addedAt: number }> }
   >;
-  savedStrategies?: HoldingStrategy[];
   onRun: (input: StrategyResearchInput) => Promise<boolean>;
-  onBack: () => void;
-  onSaved?: (strategy: HoldingStrategy) => void;
-  onDeleted?: (portfolioId: number, symbol: string, id: number) => void;
 }
-
-const strategyLabels: Record<string, string> = {
-  "klinger-oscillator": "Klinger Volume Oscillator",
-  rsi: "RSI (14)",
-  supertrend: "Supertrend",
-  "bollinger-rsi": "Bollinger Bands + RSI",
-  "donchian-breakout": "Donchian Breakout",
-  "relative-strength-momentum": "Relative Strength Momentum",
-};
 const rangeOptions: Record<
   Cadence,
   Array<{ label: string; shortLabel: string; days: number }>
@@ -227,11 +214,7 @@ export default function StrategyResearch({
   result,
   busy,
   portfolios = [],
-  savedStrategies = [],
   onRun,
-  onBack,
-  onSaved = () => undefined,
-  onDeleted = () => undefined,
 }: StrategyResearchProps): React.JSX.Element {
   const [symbol, setSymbol] = useState("MQG.AX");
   const [symbolTouched, setSymbolTouched] = useState(false);
@@ -469,7 +452,6 @@ export default function StrategyResearch({
       };
       if (!response.ok || !body.strategy)
         throw new Error(body.error ?? "Unable to save signal.");
-      onSaved(body.strategy);
       showToast(
         `${completedSweep.symbol} signal saved to ${selectedPortfolio?.name ?? "portfolio"}.`,
         "success",
@@ -483,17 +465,6 @@ export default function StrategyResearch({
       setSaving(false);
     }
   }
-  async function deleteSignal(saved: HoldingStrategy): Promise<void> {
-    const response = await fetch(
-      `/api/portfolios/${saved.portfolioId}/strategies/${encodeURIComponent(saved.symbol)}`,
-      { method: "DELETE" },
-    );
-    if (response.ok) {
-      onDeleted(saved.portfolioId, saved.symbol, saved.id);
-      showToast(`${saved.symbol} signal deleted.`, "success");
-    } else showToast("Unable to delete signal.", "error");
-  }
-
   const inputComponent = (
     <Card className="backtest-panel research-setup-panel">
       <CardHeader className="section-card-header">
@@ -549,10 +520,12 @@ export default function StrategyResearch({
                     <SelectOption value="klinger-oscillator">
                       Klinger Volume Oscillator
                     </SelectOption>
-                    <SelectOption value="rsi">RSI (14)</SelectOption>
                     <SelectOption value="supertrend">Supertrend</SelectOption>
                     <SelectOption value="bollinger-rsi">
                       Bollinger Bands + RSI
+                    </SelectOption>
+                    <SelectOption value="bollinger-macd">
+                      Bollinger Bands + MACD
                     </SelectOption>
                     <SelectOption value="donchian-breakout">
                       Donchian Breakout
@@ -958,39 +931,6 @@ export default function StrategyResearch({
               </CardContent>
             </Card>
           </div>
-          {savedStrategies.length > 0 && (
-            <Card className="saved-signals-panel">
-              <CardHeader className="section-card-header">
-                <div>
-                  <p className="section-kicker">SAVED SIGNALS</p>
-                  <CardTitle>Configured holdings</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="saved-signals">
-                  {savedStrategies.map((saved) => (
-                    <div className="saved-signal" key={saved.id}>
-                      <div>
-                        <strong>{saved.symbol}</strong>
-                        <span>
-                          {saved.label} ·{" "}
-                          {strategyLabels[saved.name] ?? saved.name}
-                        </span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Delete ${saved.symbol} signal`}
-                        onClick={() => void deleteSignal(saved)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </section>
       )}
     </>

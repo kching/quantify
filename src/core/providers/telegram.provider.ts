@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { SignalResult, SignalType } from "../types";
 
 interface TelegramCredentials {
@@ -31,11 +33,12 @@ function signalMessage({
     .slice(0, 4096);
 }
 
-export async function sendTelegramSignalNotification(
-  notification: TelegramSignalNotification,
+async function sendTelegramMessage(
+  { botToken: rawBotToken, chatId: rawChatId }: TelegramCredentials,
+  text: string,
 ): Promise<void> {
-  const botToken = notification.botToken.trim();
-  const chatId = notification.chatId.trim();
+  const botToken = rawBotToken.trim();
+  const chatId = rawChatId.trim();
   if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken))
     throw new Error("Telegram bot token is invalid.");
   if (!chatId || chatId.length > 200)
@@ -50,7 +53,7 @@ export async function sendTelegramSignalNotification(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          text: signalMessage(notification),
+          text: text.slice(0, 4096),
         }),
         signal: AbortSignal.timeout(10_000),
       },
@@ -72,4 +75,29 @@ export async function sendTelegramSignalNotification(
     throw new Error(
       apiResult.description || "Telegram could not send the message.",
     );
+}
+
+export async function sendTelegramSignalNotification(
+  notification: TelegramSignalNotification,
+): Promise<void> {
+  await sendTelegramMessage(notification, signalMessage(notification));
+}
+
+export async function sendTelegramTestMessage(
+  credentials: TelegramCredentials,
+): Promise<void> {
+  await sendTelegramMessage(
+    credentials,
+    "Quantify test message\nYour Telegram connection is working.",
+  );
+}
+
+export async function sendTelegramWelcomeMessage(
+  credentials: TelegramCredentials,
+): Promise<void> {
+  const message = await readFile(
+    join(process.cwd(), "public", "telegram-welcome.md"),
+    "utf8",
+  );
+  await sendTelegramMessage(credentials, message.trim());
 }

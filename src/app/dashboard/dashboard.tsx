@@ -79,6 +79,7 @@ const strategyLabels: Record<string, string> = {
   rsi: "RSI (14)",
   supertrend: "Supertrend",
   "bollinger-rsi": "Bollinger Bands + RSI",
+  "bollinger-macd": "Bollinger Bands + MACD",
   "donchian-breakout": "Donchian Breakout",
   "relative-strength-momentum": "Relative Strength Momentum",
 };
@@ -798,18 +799,26 @@ function DashboardContent({
                     </div>
                     <strong>
                       {latestPortfolioPerformance
-                        ? wholeDollarMoney(latestPortfolioPerformance.totalValue)
+                        ? wholeDollarMoney(
+                            latestPortfolioPerformance.totalValue,
+                          )
                         : "—"}
                     </strong>
                     <div className="metric-breakdown">
                       <small>
-                        Holding value: {latestPortfolioPerformance
-                          ? wholeDollarMoney(latestPortfolioPerformance.marketValue)
+                        Holding value:{" "}
+                        {latestPortfolioPerformance
+                          ? wholeDollarMoney(
+                              latestPortfolioPerformance.marketValue,
+                            )
                           : "—"}
                       </small>
                       <small>
-                        Cash value: {latestPortfolioPerformance
-                          ? wholeDollarMoney(latestPortfolioPerformance.cashBalance)
+                        Cash value:{" "}
+                        {latestPortfolioPerformance
+                          ? wholeDollarMoney(
+                              latestPortfolioPerformance.cashBalance,
+                            )
                           : "—"}
                       </small>
                     </div>

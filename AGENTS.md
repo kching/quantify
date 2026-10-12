@@ -37,7 +37,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ### 3. Code hygiene
 - **Ensure ESLint passes**
 - **Enforce code styles with Prettier**
-- **Use conventional commits**
+- **Always use Conventional Commits for commit messages**, including amended commits. Follow `<type>(<optional scope>): <imperative description>` (for example, `feat(research): add trading strategies`). Use a standard type such as `feat`, `fix`, `refactor`, `test`, `docs`, `style`, `perf`, `build`, `ci`, or `chore`. Do not create a commit with a message that does not follow this format.
 
 ---
 

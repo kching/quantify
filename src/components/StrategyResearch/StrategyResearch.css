@@ -4,8 +4,7 @@
   }
   .research-setup-panel,
   .scatter-panel,
-  .save-signal-panel,
-  .saved-signals-panel {
+  .save-signal-panel {
     border-color: #e4e9f0;
     box-shadow: 0 2px 7px #20304a06;
   }
@@ -429,36 +428,6 @@
     margin: 12px 0 0;
     color: #657387;
     font-size: 12px;
-  }
-  .saved-signals-panel {
-    margin-top: 0;
-  }
-  .saved-signals {
-    display: grid;
-    gap: 8px;
-  }
-  .saved-signal {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 11px 12px;
-    border: 1px solid #e9edf3;
-    border-radius: 7px;
-    background: #fafbfd;
-  }
-  .saved-signal strong,
-  .saved-signal span {
-    display: block;
-  }
-  .saved-signal strong {
-    color: #2d3b51;
-    font-size: 13px;
-  }
-  .saved-signal span {
-    margin-top: 3px;
-    color: #8995a6;
-    font-size: 11px;
   }
   @media (max-width: 800px) {
     .setup-columns {

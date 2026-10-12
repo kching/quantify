@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, MessageCircle, Save } from "lucide-react";
+import { ArrowLeft, Check, MessageCircle, Save, Trash2 } from "lucide-react";
 import type { JsonValue, UserPreferences, UserProfile } from "@/core/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,6 +54,8 @@ export default function Preferences({
     readTelegram(initialPreferences),
   );
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState<{
     text: string;
     error: boolean;
@@ -72,10 +74,20 @@ export default function Preferences({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preferences: { telegram } }),
       });
-      const body = (await response.json()) as { error?: string };
+      const body = (await response.json()) as {
+        error?: string;
+        welcomeMessageError?: string;
+      };
       if (!response.ok)
         throw new Error(body.error ?? "Unable to save Telegram settings.");
-      setMessage({ text: "Telegram settings saved.", error: false });
+      setMessage(
+        body.welcomeMessageError
+          ? {
+              text: `Telegram settings saved, but the welcome message could not be sent: ${body.welcomeMessageError}`,
+              error: true,
+            }
+          : { text: "Telegram settings saved.", error: false },
+      );
     } catch (error) {
       setMessage({
         text:
@@ -86,6 +98,63 @@ export default function Preferences({
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testTelegram(): Promise<void> {
+    setTesting(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/preferences/telegram/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(telegram),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok)
+        throw new Error(
+          body.error ?? "Unable to send a Telegram test message.",
+        );
+      setMessage({ text: "Test message sent to Telegram.", error: false });
+    } catch (error) {
+      setMessage({
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to send a Telegram test message.",
+        error: true,
+      });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function clearTelegram(): Promise<void> {
+    setClearing(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preferences: { telegram: { botToken: "", chatId: "" } },
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok)
+        throw new Error(body.error ?? "Unable to clear Telegram settings.");
+      setTelegram({ botToken: "", chatId: "" });
+      setMessage({ text: "Telegram account disconnected.", error: false });
+    } catch (error) {
+      setMessage({
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to clear Telegram settings.",
+        error: true,
+      });
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -210,9 +279,34 @@ export default function Preferences({
                   should message.
                 </p>
                 <div className="telegram-form-actions">
-                  <Button type="submit" disabled={saving}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={saving || testing || clearing}
+                    onClick={() => void testTelegram()}
+                  >
+                    {testing ? "Sending test…" : "Send test message"}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={saving || testing || clearing}
+                  >
                     {saving ? null : <Save className="size-4" />}
                     {saving ? "Saving…" : "Save Telegram settings"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={
+                      saving ||
+                      testing ||
+                      clearing ||
+                      (!telegram.botToken && !telegram.chatId)
+                    }
+                    onClick={() => void clearTelegram()}
+                  >
+                    <Trash2 className="size-4" />
+                    {clearing ? "Clearing…" : "Clear Telegram connection"}
                   </Button>
                   {message && (
                     <span

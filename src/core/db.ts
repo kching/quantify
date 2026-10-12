@@ -280,12 +280,8 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, average_unit_price REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
     CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
   `);
-  await client.execute(
-    "UPDATE holding_strategies SET name = 'rsi' WHERE name = 'rsi-14'",
-  );
-  await client.execute(
-    "UPDATE alerts SET strategy_id = 'rsi' WHERE strategy_id = 'rsi-14'",
-  );
+  await client.execute("DELETE FROM holding_strategies WHERE name = 'rsi-14'");
+  await client.execute("DELETE FROM alerts WHERE strategy_id = 'rsi-14'");
   const userColumns = await client.execute("PRAGMA table_info(users)");
   const userColumnNames = new Set(
     userColumns.rows.map((row) => String(row.name)),

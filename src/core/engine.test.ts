@@ -11,6 +11,7 @@ describe("core strategy engine", () => {
       "bollinger-rsi",
       "donchian-breakout",
       "relative-strength-momentum",
+      "bollinger-macd",
     ]);
   });
 
@@ -31,7 +32,7 @@ describe("core strategy engine", () => {
 
     const results = analyzeSymbol("TEST.AX", candles);
 
-    expect(results).toHaveLength(6);
+    expect(results).toHaveLength(7);
     expect(results.map((result) => result.strategyId)).toEqual([
       "klinger-oscillator",
       "rsi",
@@ -39,6 +40,7 @@ describe("core strategy engine", () => {
       "bollinger-rsi",
       "donchian-breakout",
       "relative-strength-momentum",
+      "bollinger-macd",
     ]);
     expect(results.every((result) => result.symbol === "TEST.AX")).toBe(true);
   });
