@@ -532,7 +532,7 @@ describe("Dashboard", () => {
     ).toBeDefined();
     expect(screen.getByLabelText("HOLD: RSI (14)")).toBeDefined();
     expect(screen.getAllByText("BUY")).toHaveLength(2);
-    expect(screen.getByText("$204.00")).toBeDefined();
+    expect(screen.getAllByText("$204.00")).toHaveLength(2);
     expect(
       screen.getByRole("columnheader", { name: "DAILY CHANGE" }),
     ).toBeDefined();
