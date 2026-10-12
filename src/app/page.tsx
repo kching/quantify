@@ -11,7 +11,7 @@ export default async function Home(): Promise<React.JSX.Element> {
       <main className="landing-page">
         <div className="landing-card">
           <p className="brand-mark">QUANTIFY</p>
-          <span className="landing-eyebrow">ASX MARKET INTELLIGENCE</span>
+          <span className="landing-eyebrow">STOCK MARKET INTELLIGENCE</span>
           <h1>Your portfolio, with a clearer point of view.</h1>
           <p className="landing-copy">
             Track holdings, understand signals, and test strategies in one
@@ -27,7 +27,7 @@ export default async function Home(): Promise<React.JSX.Element> {
     <main className="landing-page">
       <div className="landing-card">
         <p className="brand-mark">QUANTIFY</p>
-        <span className="landing-eyebrow">ASX MARKET INTELLIGENCE</span>
+        <span className="landing-eyebrow">STOCK MARKET INTELLIGENCE</span>
         <h1>Make every market decision more deliberate.</h1>
         <p className="landing-copy">
           A calm workspace for tracking your portfolio, exploring strategies,

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Quantify | ASX Market Monitor",
+  title: "Quantify | Stock Market Monitor",
   description:
-    "Local ASX market monitoring, explainable strategy signals, and cached historical backtesting.",
+    "Stock market monitoring, customisable strategy signals, and cached historical backtesting.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
