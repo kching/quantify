@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, MessageCircle, Save, Trash2 } from "lucide-react";
-import type { JsonValue, UserPreferences, UserProfile } from "@/core/types";
+import { ArrowLeft, Check, MessageCircle, QrCode, Trash2 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import type { UserProfile } from "@/core/types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Sidebar,
   SidebarContent,
@@ -26,14 +26,12 @@ import {
 import "@/components/AppSidebar/AppSidebar.css";
 import "./preferences.css";
 
-interface TelegramPreferences {
-  botToken: string;
-  chatId: string;
-}
-
 interface TelegramApiResponse {
   error?: string;
-  welcomeMessageError?: string;
+  connectUrl?: string;
+  connected?: boolean;
+  configured?: boolean;
+  expiresAt?: number;
 }
 
 async function readTelegramResponse(
@@ -52,69 +50,82 @@ async function readTelegramResponse(
 }
 interface PreferencesProps {
   user: Pick<UserProfile, "name" | "image">;
-  initialPreferences: UserPreferences;
-}
-
-function readTelegram(preferences: UserPreferences): TelegramPreferences {
-  const telegram = preferences.telegram;
-  if (!telegram || typeof telegram !== "object" || Array.isArray(telegram))
-    return { botToken: "", chatId: "" };
-  const values = telegram as Record<string, JsonValue>;
-  return {
-    botToken: typeof values.botToken === "string" ? values.botToken : "",
-    chatId: typeof values.chatId === "string" ? values.chatId : "",
-  };
+  initialConnected: boolean;
+  botConfigured: boolean;
 }
 
 export default function Preferences({
   user,
-  initialPreferences,
+  initialConnected,
+  botConfigured,
 }: PreferencesProps): React.JSX.Element {
-  const [telegram, setTelegram] = useState<TelegramPreferences>(() =>
-    readTelegram(initialPreferences),
-  );
-  const [saving, setSaving] = useState(false);
+  const [connected, setConnected] = useState(initialConnected);
+  const [configured, setConfigured] = useState(botConfigured);
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
+  const [creatingLink, setCreatingLink] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [clearing, setClearing] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{
     text: string;
     error: boolean;
   } | null>(null);
   const firstName = user.name.trim().split(/\s+/)[0] || "User";
 
-  async function saveTelegram(
-    event: React.FormEvent<HTMLFormElement>,
-  ): Promise<void> {
-    event.preventDefault();
-    setSaving(true);
+  useEffect(() => {
+    if (!connectUrl || connected) return;
+    let active = true;
+    const checkConnection = async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/preferences/telegram/connect", {
+          cache: "no-store",
+        });
+        const body = await readTelegramResponse(response);
+        if (!active || !response.ok) return;
+        setConnected(Boolean(body.connected));
+        setConfigured(Boolean(body.configured));
+        if (body.connected) {
+          setConnectUrl(null);
+          setMessage({ text: "Telegram is connected.", error: false });
+        }
+      } catch {
+        // Keep polling while the user switches to Telegram to start the bot.
+      }
+    };
+    void checkConnection();
+    const timer = window.setInterval(() => void checkConnection(), 2_500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [connectUrl, connected]);
+
+  async function createConnectionLink(): Promise<void> {
+    setCreatingLink(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/preferences", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preferences: { telegram } }),
+      const response = await fetch("/api/preferences/telegram/connect", {
+        method: "POST",
       });
       const body = await readTelegramResponse(response);
       if (!response.ok)
-        throw new Error(body.error ?? "Unable to save Telegram settings.");
-      setMessage(
-        body.welcomeMessageError
-          ? {
-              text: `Telegram settings saved, but the welcome message could not be sent: ${body.welcomeMessageError}`,
-              error: true,
-            }
-          : { text: "Telegram settings saved.", error: false },
-      );
+        throw new Error(body.error ?? "Unable to create a Telegram link.");
+      if (!body.connectUrl)
+        throw new Error("Telegram did not return a connection link.");
+      setConnectUrl(body.connectUrl);
+      setMessage({
+        text: "Scan the QR code and tap Start in Telegram.",
+        error: false,
+      });
     } catch (error) {
       setMessage({
         text:
           error instanceof Error
             ? error.message
-            : "Unable to save Telegram settings.",
+            : "Unable to create a Telegram connection link.",
         error: true,
       });
     } finally {
-      setSaving(false);
+      setCreatingLink(false);
     }
   }
 
@@ -124,8 +135,6 @@ export default function Preferences({
     try {
       const response = await fetch("/api/preferences/telegram/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(telegram),
       });
       const body = await readTelegramResponse(response);
       if (!response.ok)
@@ -146,32 +155,29 @@ export default function Preferences({
     }
   }
 
-  async function clearTelegram(): Promise<void> {
-    setClearing(true);
+  async function disconnectTelegram(): Promise<void> {
+    setDisconnecting(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/preferences", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          preferences: { telegram: { botToken: "", chatId: "" } },
-        }),
+      const response = await fetch("/api/preferences/telegram/connect", {
+        method: "DELETE",
       });
       const body = await readTelegramResponse(response);
       if (!response.ok)
-        throw new Error(body.error ?? "Unable to clear Telegram settings.");
-      setTelegram({ botToken: "", chatId: "" });
-      setMessage({ text: "Telegram account disconnected.", error: false });
+        throw new Error(body.error ?? "Unable to disconnect Telegram.");
+      setConnected(false);
+      setConnectUrl(null);
+      setMessage({ text: "Telegram disconnected.", error: false });
     } catch (error) {
       setMessage({
         text:
           error instanceof Error
             ? error.message
-            : "Unable to clear Telegram settings.",
+            : "Unable to disconnect Telegram.",
         error: true,
       });
     } finally {
-      setClearing(false);
+      setDisconnecting(false);
     }
   }
 
@@ -247,100 +253,91 @@ export default function Preferences({
                 <p className="section-kicker">TELEGRAM ACCOUNT</p>
                 <CardTitle>Bot connection</CardTitle>
                 <CardDescription>
-                  Enter a bot token and the chat ID where messages should be
-                  sent.
+                  Connect your Telegram chat to Quantify using a temporary QR
+                  code. The app manages the bot for all users.
                 </CardDescription>
               </div>
             </CardHeader>
             <CardContent>
-              <form
-                className="telegram-preferences-form"
-                onSubmit={(event) => void saveTelegram(event)}
-              >
-                <label>
-                  Bot token
-                  <Input
-                    aria-label="Telegram bot token"
-                    type="password"
-                    autoComplete="new-password"
-                    value={telegram.botToken}
-                    onChange={(event) =>
-                      setTelegram((current) => ({
-                        ...current,
-                        botToken: event.target.value,
-                      }))
-                    }
-                    placeholder="123456:ABC…"
-                  />
-                </label>
-                <p className="telegram-field-help">
-                  Create a bot with BotFather in Telegram, then paste its token
-                  here.
+              {!configured && (
+                <p className="telegram-field-help" role="status">
+                  Telegram is not configured yet. The app administrator needs to
+                  set the shared bot token and webhook secret.
                 </p>
-                <label>
-                  Chat ID
-                  <Input
-                    aria-label="Telegram chat ID"
-                    value={telegram.chatId}
-                    onChange={(event) =>
-                      setTelegram((current) => ({
-                        ...current,
-                        chatId: event.target.value,
-                      }))
-                    }
-                    placeholder="Your personal or group chat ID"
-                  />
-                </label>
-                <p className="telegram-field-help">
-                  Open your bot in Telegram and tap Start (or send /start)
-                  before connecting. Telegram won’t let a bot start a private
-                  chat. Then enter the chat ID it should message.
+              )}
+              {connected ? (
+                <p className="telegram-connected" role="status">
+                  <Check /> Your Telegram chat is connected.
                 </p>
-                <div className="telegram-form-actions">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={saving || testing || clearing}
-                    onClick={() => void testTelegram()}
-                  >
-                    {testing ? "Sending test…" : "Send test message"}
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={saving || testing || clearing}
-                  >
-                    {saving ? null : <Save className="size-4" />}
-                    {saving ? "Saving…" : "Save Telegram settings"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={
-                      saving ||
-                      testing ||
-                      clearing ||
-                      (!telegram.botToken && !telegram.chatId)
-                    }
-                    onClick={() => void clearTelegram()}
-                  >
-                    <Trash2 className="size-4" />
-                    {clearing ? "Clearing…" : "Clear Telegram connection"}
-                  </Button>
-                  {message && (
-                    <span
-                      className={
-                        message.error
-                          ? "preferences-message error"
-                          : "preferences-message"
-                      }
-                      role={message.error ? "alert" : "status"}
-                    >
-                      {!message.error && <Check />}
-                      {message.text}
-                    </span>
-                  )}
+              ) : (
+                <p className="telegram-field-help">
+                  Create a connection link, scan it with Telegram, then tap
+                  Start. The link expires after 10 minutes.
+                </p>
+              )}
+              {connectUrl && !connected && (
+                <div className="telegram-qr-panel">
+                  <QRCodeSVG
+                    value={connectUrl}
+                    size={224}
+                    level="M"
+                    title="Scan to connect Telegram to Quantify"
+                  />
+                  <a href={connectUrl} target="_blank" rel="noreferrer">
+                    Open Telegram connection link
+                  </a>
                 </div>
-              </form>
+              )}
+              <div className="telegram-form-actions">
+                {!connected && (
+                  <Button
+                    type="button"
+                    disabled={!configured || creatingLink}
+                    onClick={() => void createConnectionLink()}
+                  >
+                    <QrCode className="size-4" />
+                    {creatingLink
+                      ? "Creating link…"
+                      : connectUrl
+                        ? "Create a new QR code"
+                        : "Connect Telegram"}
+                  </Button>
+                )}
+                {connected && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={testing || disconnecting}
+                      onClick={() => void testTelegram()}
+                    >
+                      {testing ? "Sending test…" : "Send test message"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={testing || disconnecting}
+                      onClick={() => void disconnectTelegram()}
+                    >
+                      <Trash2 className="size-4" />
+                      {disconnecting ? "Disconnecting…" : "Disconnect Telegram"}
+                    </Button>
+                  </>
+                )}
+                {message && (
+                  <span
+                    className={
+                      message.error
+                        ? "preferences-message error"
+                        : "preferences-message"
+                    }
+                    role={message.error ? "alert" : "status"}
+                  >
+                    {!message.error && <Check />}
+                    {message.text}
+                  </span>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

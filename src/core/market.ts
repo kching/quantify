@@ -3,7 +3,7 @@ import {
   DAILY_CANDLE_HISTORY_DAYS,
   DAILY_CANDLE_RETENTION_MS,
   getCandles,
-  getUserPreferences,
+  getTelegramConnection,
   listHoldingStrategies,
   listPortfolioTradeSymbols,
   listPortfolios,
@@ -20,7 +20,6 @@ import type {
   Candle,
   CandleInterval,
   HoldingStrategy,
-  JsonValue,
   SignalResult,
   SignalStrategy,
   StrategyParams,
@@ -43,29 +42,13 @@ async function recordSignalAndNotify(
   );
   if (state.changed && state.previousSignal) {
     try {
-      const preferences = await getUserPreferences(userId);
-      const telegram = preferences.telegram;
-      if (
-        telegram &&
-        typeof telegram === "object" &&
-        !Array.isArray(telegram)
-      ) {
-        const credentials = telegram as Record<string, JsonValue>;
-        const botToken = credentials.botToken;
-        const chatId = credentials.chatId;
-        if (
-          typeof botToken === "string" &&
-          typeof chatId === "string" &&
-          botToken.trim() &&
-          chatId.trim()
-        ) {
-          await sendTelegramSignalNotification({
-            botToken,
-            chatId,
-            previousSignal: state.previousSignal,
-            result: signal,
-          });
-        }
+      const connection = await getTelegramConnection(userId);
+      if (connection) {
+        await sendTelegramSignalNotification({
+          chatId: connection.chatId,
+          previousSignal: state.previousSignal,
+          result: signal,
+        });
       }
     } catch (error: unknown) {
       warnings.push(

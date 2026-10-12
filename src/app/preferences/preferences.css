@@ -68,21 +68,39 @@
   border-color: #e4e9f0;
   box-shadow: 0 2px 7px #20304a06;
 }
-.telegram-preferences-form {
-  display: grid;
-  gap: 6px;
-}
-.telegram-preferences-form label {
-  display: grid;
-  gap: 7px;
-  color: #4f5d71;
-  font-size: 13px;
-  font-weight: 650;
-}
 .telegram-field-help {
-  margin: -1px 0 13px;
+  margin: 0 0 14px;
   color: #8691a2;
   font-size: 12px;
+}
+.telegram-connected {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 14px;
+  color: #14805e;
+  font-size: 14px;
+  font-weight: 650;
+}
+.telegram-connected svg {
+  width: 16px;
+  height: 16px;
+}
+.telegram-qr-panel {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: fit-content;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #e4e9f0;
+  border-radius: 12px;
+  background: #fff;
+}
+.telegram-qr-panel a {
+  color: #2864dc;
+  font-size: 13px;
+  text-decoration: underline;
 }
 .telegram-form-actions {
   display: flex;

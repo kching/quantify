@@ -1,13 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import "server-only";
 import type { SignalResult, SignalType } from "../types";
 
-interface TelegramCredentials {
-  botToken: string;
+interface TelegramSignalNotification {
   chatId: string;
-}
-
-interface TelegramSignalNotification extends TelegramCredentials {
   previousSignal: SignalType;
   result: SignalResult;
 }
@@ -15,46 +10,37 @@ interface TelegramSignalNotification extends TelegramCredentials {
 interface TelegramApiResponse {
   ok?: boolean;
   description?: string;
+  result?: { username?: string };
 }
 
-function signalMessage({
-  previousSignal,
-  result,
-}: Pick<TelegramSignalNotification, "previousSignal" | "result">): string {
-  return [
-    "Quantify signal changed",
-    `${result.symbol} · ${result.label ?? result.strategyName}`,
-    `${previousSignal} → ${result.signal}`,
-    `Price: ${result.price.toFixed(2)}`,
-    result.rationale,
-    new Date(result.timestamp).toISOString(),
-  ]
-    .join("\n")
-    .slice(0, 4096);
+const welcomeMessage = [
+  "Welcome to Quantify!",
+  "",
+  "Your Telegram account is connected. You’ll receive a message here when one of your configured signals changes.",
+  "",
+  "You can disconnect this chat any time from Telegram preferences or by sending /stop.",
+].join("\n");
+
+function botToken(): string {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) throw new Error("The app Telegram bot is not configured.");
+  if (!/^\d+:[A-Za-z0-9_-]+$/.test(token))
+    throw new Error("The app Telegram bot token is invalid.");
+  return token;
 }
 
-async function sendTelegramMessage(
-  { botToken: rawBotToken, chatId: rawChatId }: TelegramCredentials,
-  text: string,
-): Promise<void> {
-  const botToken = rawBotToken.trim();
-  const chatId = rawChatId.trim();
-  if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken))
-    throw new Error("Telegram bot token is invalid.");
-  if (!chatId || chatId.length > 200)
-    throw new Error("Telegram chat ID is invalid.");
-
+async function callTelegram(
+  method: string,
+  payload?: Record<string, string>,
+): Promise<TelegramApiResponse> {
   let response: Response;
   try {
     response = await fetch(
-      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      `https://api.telegram.org/bot${botToken()}/${method}`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: text.slice(0, 4096),
-        }),
+        method: payload ? "POST" : "GET",
+        headers: payload ? { "Content-Type": "application/json" } : undefined,
+        body: payload ? JSON.stringify(payload) : undefined,
         signal: AbortSignal.timeout(10_000),
       },
     );
@@ -75,29 +61,84 @@ async function sendTelegramMessage(
     throw new Error(
       apiResult.description || "Telegram could not send the message.",
     );
+  return apiResult;
+}
+
+function signalMessage({
+  previousSignal,
+  result,
+}: Pick<TelegramSignalNotification, "previousSignal" | "result">): string {
+  return [
+    "Quantify signal changed",
+    `${result.symbol} · ${result.label ?? result.strategyName}`,
+    `${previousSignal} → ${result.signal}`,
+    `Price: ${result.price.toFixed(2)}`,
+    result.rationale,
+    new Date(result.timestamp).toISOString(),
+  ]
+    .join("\n")
+    .slice(0, 4096);
+}
+
+export async function sendTelegramText(
+  rawChatId: string,
+  text: string,
+): Promise<void> {
+  const chatId = rawChatId.trim();
+  if (!chatId || chatId.length > 200)
+    throw new Error("Telegram chat ID is invalid.");
+  await callTelegram("sendMessage", {
+    chat_id: chatId,
+    text: text.slice(0, 4096),
+  });
+}
+
+export async function getTelegramBotUsername(): Promise<string> {
+  const response = await callTelegram("getMe");
+  const username = response.result?.username;
+  if (!username) throw new Error("The app Telegram bot has no username.");
+  return username;
+}
+
+export async function configureTelegramWebhook(): Promise<void> {
+  const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL?.trim();
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  if (!webhookUrl || !webhookSecret)
+    throw new Error(
+      "Set TELEGRAM_WEBHOOK_URL and TELEGRAM_WEBHOOK_SECRET to enable Telegram.",
+    );
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(webhookUrl);
+  } catch {
+    throw new Error("TELEGRAM_WEBHOOK_URL must be a valid HTTPS URL.");
+  }
+  if (parsedUrl.protocol !== "https:")
+    throw new Error("TELEGRAM_WEBHOOK_URL must use HTTPS.");
+  if (!/^[A-Za-z0-9_-]{1,256}$/.test(webhookSecret))
+    throw new Error("TELEGRAM_WEBHOOK_SECRET has an invalid format.");
+  await callTelegram("setWebhook", {
+    url: parsedUrl.toString(),
+    secret_token: webhookSecret,
+    allowed_updates: JSON.stringify(["message"]),
+  });
 }
 
 export async function sendTelegramSignalNotification(
   notification: TelegramSignalNotification,
 ): Promise<void> {
-  await sendTelegramMessage(notification, signalMessage(notification));
+  await sendTelegramText(notification.chatId, signalMessage(notification));
 }
 
-export async function sendTelegramTestMessage(
-  credentials: TelegramCredentials,
-): Promise<void> {
-  await sendTelegramMessage(
-    credentials,
+export async function sendTelegramTestMessage(chatId: string): Promise<void> {
+  await sendTelegramText(
+    chatId,
     "Quantify test message\nYour Telegram connection is working.",
   );
 }
 
 export async function sendTelegramWelcomeMessage(
-  credentials: TelegramCredentials,
+  chatId: string,
 ): Promise<void> {
-  const message = await readFile(
-    join(process.cwd(), "public", "telegram-welcome.md"),
-    "utf8",
-  );
-  await sendTelegramMessage(credentials, message.trim());
+  await sendTelegramText(chatId, welcomeMessage);
 }

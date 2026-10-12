@@ -50,6 +50,12 @@ AUTH_GOOGLE_SECRET=your-google-oauth-client-secret
 
 The local Google OAuth callback URL is `http://localhost:3000/api/auth/callback/google`. All users must authenticate with Google before accessing the dashboard or portfolio APIs.
 
+## Telegram notifications
+
+Quantify uses one shared Telegram bot for all users. Create the bot with [@BotFather](https://t.me/BotFather), then set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_URL`, and `TELEGRAM_WEBHOOK_SECRET` in the server environment. The webhook URL must be the app's public HTTPS URL ending in `/api/telegram/webhook`. Use a random 1–256 character secret containing only letters, numbers, underscores, or hyphens. The first user who connects automatically registers the webhook with Telegram.
+
+Users connect from **Preferences → Telegram** by generating a temporary QR code, scanning it in Telegram, and tapping **Start**. The code expires after 10 minutes and can only be used once. Quantify stores the resulting Telegram chat ID against the signed-in user; the shared bot token stays in server configuration. Users can test or disconnect the connection from the same page, or send `/stop` to the bot.
+
 ## Docker deployment
 
 The production image is built from the multi-stage `Dockerfile` and runs the Next.js standalone server as an unprivileged user. The SQLite database lives in `/app/data`; use the included `compose.yml` so it remains in a named Docker volume:

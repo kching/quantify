@@ -1,11 +1,22 @@
 import { redirect } from "next/navigation";
 import Preferences from "../preferences";
-import { getUserPreferences } from "@/core/db";
+import { getTelegramConnection } from "@/core/db";
 import { getCurrentUser } from "@/lib/current-user";
 
 export default async function TelegramPreferencesPage(): Promise<React.JSX.Element> {
   const user = await getCurrentUser();
   if (!user) redirect("/");
-  const preferences = await getUserPreferences(user.id);
-  return <Preferences user={user} initialPreferences={preferences} />;
+  const connection = await getTelegramConnection(user.id);
+  const botConfigured = Boolean(
+    process.env.TELEGRAM_BOT_TOKEN &&
+    process.env.TELEGRAM_WEBHOOK_URL &&
+    process.env.TELEGRAM_WEBHOOK_SECRET,
+  );
+  return (
+    <Preferences
+      user={user}
+      initialConnected={Boolean(connection)}
+      botConfigured={botConfigured}
+    />
+  );
 }

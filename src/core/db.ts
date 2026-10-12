@@ -54,6 +54,29 @@ const userPreferences = sqliteTable("user_preferences", {
   preferences: text("preferences").notNull().default("{}"),
   updatedAt: integer("updated_at").notNull(),
 });
+const telegramConnections = sqliteTable(
+  "telegram_connections",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").notNull(),
+    connectedAt: integer("connected_at").notNull(),
+  },
+  (table) => [uniqueIndex("telegram_connections_chat_id").on(table.chatId)],
+);
+const telegramLinkTokens = sqliteTable(
+  "telegram_link_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [index("telegram_link_tokens_user_id").on(table.userId)],
+);
 const portfolios = sqliteTable(
   "portfolios",
   {
@@ -249,6 +272,8 @@ export const db = drizzle({
   schema: {
     users,
     userPreferences,
+    telegramConnections,
+    telegramLinkTokens,
     portfolios,
     holdings,
     holdingStrategies,
@@ -268,6 +293,9 @@ async function initializeDatabase(): Promise<void> {
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT, image TEXT, google_subject TEXT UNIQUE, is_anonymous INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS user_preferences (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, preferences TEXT NOT NULL DEFAULT '{}', updated_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS telegram_connections (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, chat_id TEXT NOT NULL UNIQUE, connected_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS telegram_link_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS telegram_link_tokens_user_id ON telegram_link_tokens(user_id);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
     CREATE TABLE IF NOT EXISTS holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, candle_type TEXT NOT NULL DEFAULT '1d', last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE);
@@ -282,6 +310,25 @@ async function initializeDatabase(): Promise<void> {
   `);
   await client.execute("DELETE FROM holding_strategies WHERE name = 'rsi-14'");
   await client.execute("DELETE FROM alerts WHERE strategy_id = 'rsi-14'");
+  const preferenceRows = await client.execute(
+    "SELECT user_id, preferences FROM user_preferences",
+  );
+  for (const row of preferenceRows.rows) {
+    try {
+      const stored: unknown = JSON.parse(String(row.preferences));
+      if (!stored || typeof stored !== "object" || Array.isArray(stored))
+        continue;
+      const preferences = stored as Record<string, unknown>;
+      if (!("telegram" in preferences)) continue;
+      delete preferences.telegram;
+      await client.execute({
+        sql: "UPDATE user_preferences SET preferences = ?, updated_at = ? WHERE user_id = ?",
+        args: [JSON.stringify(preferences), Date.now(), String(row.user_id)],
+      });
+    } catch {
+      // Preserve malformed preferences rather than overwriting unrelated data.
+    }
+  }
   const userColumns = await client.execute("PRAGMA table_info(users)");
   const userColumnNames = new Set(
     userColumns.rows.map((row) => String(row.name)),
@@ -509,6 +556,105 @@ export async function updateUserPreferences(
     })
     .run();
   return preferences;
+}
+
+export interface TelegramConnection {
+  userId: string;
+  chatId: string;
+  connectedAt: number;
+}
+
+export async function getTelegramConnection(
+  userId: string,
+): Promise<TelegramConnection | null> {
+  await ensureDatabase();
+  return (
+    (await db
+      .select()
+      .from(telegramConnections)
+      .where(eq(telegramConnections.userId, userId))
+      .get()) ?? null
+  );
+}
+
+export async function createTelegramLinkToken(
+  userId: string,
+  tokenHash: string,
+  expiresAt: number,
+): Promise<void> {
+  await ensureDatabase();
+  await db
+    .delete(telegramLinkTokens)
+    .where(eq(telegramLinkTokens.userId, userId))
+    .run();
+  await db.insert(telegramLinkTokens).values({
+    tokenHash,
+    userId,
+    expiresAt,
+    createdAt: Date.now(),
+  });
+}
+
+export async function consumeTelegramLinkToken(
+  tokenHash: string,
+): Promise<string | null> {
+  await ensureDatabase();
+  const row = await db
+    .delete(telegramLinkTokens)
+    .where(eq(telegramLinkTokens.tokenHash, tokenHash))
+    .returning({
+      userId: telegramLinkTokens.userId,
+      expiresAt: telegramLinkTokens.expiresAt,
+    })
+    .get();
+  return row && row.expiresAt > Date.now() ? row.userId : null;
+}
+
+export async function connectTelegramChat(
+  userId: string,
+  chatId: string,
+): Promise<void> {
+  await ensureDatabase();
+  await db
+    .insert(telegramConnections)
+    .values({ userId, chatId, connectedAt: Date.now() })
+    .onConflictDoUpdate({
+      target: telegramConnections.userId,
+      set: { chatId, connectedAt: Date.now() },
+    })
+    .run();
+}
+
+export async function disconnectTelegramConnection(
+  userId: string,
+): Promise<void> {
+  await ensureDatabase();
+  await db
+    .delete(telegramConnections)
+    .where(eq(telegramConnections.userId, userId))
+    .run();
+  await db
+    .delete(telegramLinkTokens)
+    .where(eq(telegramLinkTokens.userId, userId))
+    .run();
+}
+
+export async function disconnectTelegramChat(chatId: string): Promise<void> {
+  await ensureDatabase();
+  const connection = await db
+    .select({ userId: telegramConnections.userId })
+    .from(telegramConnections)
+    .where(eq(telegramConnections.chatId, chatId))
+    .get();
+  await db
+    .delete(telegramConnections)
+    .where(eq(telegramConnections.chatId, chatId))
+    .run();
+  if (connection)
+    await db
+      .delete(telegramLinkTokens)
+      .where(eq(telegramLinkTokens.userId, connection.userId))
+      .run();
 }
 
 export async function listPortfolios(
