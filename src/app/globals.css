@@ -1006,10 +1006,6 @@ th:first-child {
     display: none;
   }
   .header-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-  .header-actions > button {
     margin-left: auto;
   }
   .page-heading h1 {
