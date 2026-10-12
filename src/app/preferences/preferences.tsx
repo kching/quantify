@@ -279,7 +279,8 @@ export default function Preferences({
                 <div className="telegram-qr-panel">
                   <QRCodeSVG
                     value={connectUrl}
-                    size={224}
+                    size={256}
+                    marginSize={4}
                     level="M"
                     title="Scan to connect Telegram to Quantify"
                   />

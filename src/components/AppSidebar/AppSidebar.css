@@ -1,4 +1,9 @@
 @layer component-styles {
+  .mobile-sidebar-trigger,
+  .mobile-sidebar-close,
+  .mobile-sidebar-backdrop {
+    display: none;
+  }
   .app-sidebar {
     position: fixed;
     z-index: 30;
@@ -179,5 +184,97 @@
   .profile-menu a:hover {
     background: #2a3b56;
     color: white;
+  }
+}
+
+@media (max-width: 780px) {
+  .app-sidebar {
+    position: fixed;
+    z-index: 40;
+    inset: 0 auto 0 0;
+    width: min(290px, calc(100vw - 52px));
+    height: 100dvh;
+    padding: 62px 15px 16px;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.24s ease,
+      visibility 0.24s;
+  }
+  .app-sidebar[data-mobile-open="true"] {
+    transform: translateX(0);
+    visibility: visible;
+  }
+  .app-sidebar[data-collapsed="true"] {
+    width: min(290px, calc(100vw - 52px));
+    padding: 62px 15px 16px;
+  }
+  .app-sidebar[data-collapsed="true"] .sidebar-header {
+    align-items: flex-start;
+    flex-direction: row;
+    margin-bottom: 29px;
+  }
+  .app-sidebar[data-collapsed="true"] .sidebar-brand {
+    margin: 0 7px;
+    transform: none;
+  }
+  .app-sidebar[data-collapsed="true"] .sidebar-brand-copy,
+  .app-sidebar[data-collapsed="true"] .sidebar-profile-copy,
+  .app-sidebar[data-collapsed="true"] .sidebar-menu-label {
+    display: revert;
+  }
+  .app-sidebar[data-collapsed="true"] .sidebar-label {
+    display: block;
+  }
+  .app-sidebar[data-collapsed="true"] .sidebar-help {
+    display: flex;
+  }
+  .app-sidebar[data-collapsed="true"] .sidebar-nav {
+    display: grid;
+  }
+  .app-sidebar[data-collapsed="true"] .nav-item {
+    justify-content: flex-start;
+    padding: 0 11px;
+  }
+  .mobile-sidebar-trigger {
+    position: fixed;
+    z-index: 39;
+    top: 12px;
+    left: 12px;
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border: 1px solid #e4e9f0;
+    border-radius: 9px;
+    background: #fff;
+    color: #26364d;
+    box-shadow: 0 2px 8px #20304a14;
+  }
+  .mobile-sidebar-trigger svg,
+  .mobile-sidebar-close svg {
+    width: 20px;
+    height: 20px;
+  }
+  .mobile-sidebar-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: #202d43;
+    color: #f8fafc;
+  }
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    z-index: 39;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: #0b142b80;
   }
 }

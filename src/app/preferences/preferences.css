@@ -123,22 +123,3 @@
   width: 15px;
   height: 15px;
 }
-@media (max-width: 760px) {
-  .preferences-sidebar {
-    width: 72px;
-    padding-right: 9px;
-    padding-left: 9px;
-  }
-  .preferences-sidebar .sidebar-brand-copy,
-  .preferences-sidebar-heading,
-  .preferences-sidebar .sidebar-menu-label,
-  .preferences-user > span:last-child {
-    display: none;
-  }
-  .preferences-sidebar .sidebar-header {
-    align-items: center;
-  }
-  .preferences-shell .app-main {
-    margin-left: 72px;
-  }
-}

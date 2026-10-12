@@ -1,19 +1,62 @@
 import { Button as BaseButton } from "@base-ui/react/button";
 import Link from "next/link";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { ComponentProps, MouseEventHandler, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export function Sidebar({
   className,
+  children,
   ...props
 }: ComponentProps<"aside">): React.JSX.Element {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
+
   return (
-    <aside
-      data-slot="sidebar"
-      className={cn("app-sidebar", className)}
-      {...props}
-    />
+    <>
+      <button
+        type="button"
+        className="mobile-sidebar-trigger"
+        aria-label="Open navigation menu"
+        aria-expanded={mobileOpen}
+        onClick={() => setMobileOpen(true)}
+      >
+        <Menu aria-hidden="true" />
+      </button>
+      {mobileOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-backdrop"
+          aria-label="Close navigation menu"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+      <aside
+        data-slot="sidebar"
+        data-mobile-open={mobileOpen || undefined}
+        className={cn("app-sidebar", className)}
+        {...props}
+      >
+        <button
+          type="button"
+          className="mobile-sidebar-close"
+          aria-label="Close navigation menu"
+          onClick={() => setMobileOpen(false)}
+        >
+          <X aria-hidden="true" />
+        </button>
+        {children}
+      </aside>
+    </>
   );
 }
 
