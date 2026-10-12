@@ -183,6 +183,11 @@ function chartScale(values: number[]): ChartScale {
 function percentLabel(value: number): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(0)}%`;
 }
+function returnColor(value: number, minimum: number, maximum: number): string {
+  const hue =
+    value < 0 ? 60 * (1 - value / minimum) : 60 + 60 * (value / maximum);
+  return `hsl(${Math.max(0, Math.min(120, hue))} 58% 48%)`;
+}
 function signedPercent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
@@ -793,19 +798,24 @@ export default function StrategyResearch({
                         (returnScale.max - returnScale.min)) *
                         100;
                     const isSelected = selectedIndex === index;
-                    const colorClass = isSelected
-                      ? "selected"
-                      : returnValue >= 0
-                        ? "profitable"
-                        : "loss-making";
                     return (
                       <button
                         type="button"
                         aria-label={`Select run ${index + 1}`}
                         aria-pressed={isSelected}
                         key={`${run.strategyReturnPct}-${index}`}
-                        className={`scatter-point ${colorClass}`}
-                        style={{ left: `${x}%`, top: `${y}%` }}
+                        className={`scatter-point${isSelected ? " selected" : ""}`}
+                        style={{
+                          left: `${x}%`,
+                          top: `${y}%`,
+                          backgroundColor: isSelected
+                            ? "#2864dc"
+                            : returnColor(
+                                returnValue,
+                                returnScale.min,
+                                returnScale.max,
+                              ),
+                        }}
                         onClick={() => selectRun(index)}
                       />
                     );
