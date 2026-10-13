@@ -33,6 +33,7 @@ import type {
   WebhookConfigInput,
   WebhookDeliveryLog,
   WebhookDeliveryLogInput,
+  McpAccessToken,
 } from "./types";
 
 const users = sqliteTable(
@@ -94,6 +95,9 @@ const webhookConfigs = sqliteTable(
     secretToken: text("secret_token"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
+    createdVia: text("created_via", { enum: ["user", "mcp"] })
+      .notNull()
+      .default("user"),
   },
   (table) => [index("webhook_configs_user_id").on(table.userId)],
 );
@@ -130,8 +134,27 @@ const portfolios = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     createdAt: integer("created_at").notNull(),
+    createdVia: text("created_via", { enum: ["user", "mcp"] })
+      .notNull()
+      .default("user"),
   },
   (table) => [uniqueIndex("portfolios_user_name").on(table.userId, table.name)],
+);
+const mcpAccessTokens = sqliteTable(
+  "mcp_access_tokens",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    lastUsedAt: integer("last_used_at"),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [index("mcp_access_tokens_user_id").on(table.userId)],
 );
 const holdings = sqliteTable(
   "holdings",
@@ -318,6 +341,7 @@ export const db = drizzle({
     userPreferences,
     telegramConnections,
     telegramLinkTokens,
+    mcpAccessTokens,
     webhookConfigs,
     webhookDeliveryLogs,
     portfolios,
@@ -344,6 +368,8 @@ async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS telegram_link_tokens_user_id ON telegram_link_tokens(user_id);
     CREATE TABLE IF NOT EXISTS webhook_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL DEFAULT 'Webhook', url TEXT NOT NULL, client_id TEXT, secret_token TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS webhook_configs_user_id ON webhook_configs(user_id);
+    CREATE TABLE IF NOT EXISTS mcp_access_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
+    CREATE INDEX IF NOT EXISTS mcp_access_tokens_user_id ON mcp_access_tokens(user_id);
     CREATE TABLE IF NOT EXISTS webhook_delivery_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, webhook_config_id INTEGER, event_type TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL, status_code INTEGER, message TEXT, timestamp INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
@@ -357,12 +383,17 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, average_unit_price REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
     CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
   `);
+  for (const tableName of ["webhook_configs", "portfolios"] as const) {
+    const columns = await client.execute(`PRAGMA table_info(${tableName})`);
+    if (!columns.rows.some((row) => String(row.name) === "created_via"))
+      await client.execute(
+        `ALTER TABLE ${tableName} ADD COLUMN created_via TEXT NOT NULL DEFAULT 'user'`,
+      );
+  }
   const webhookConfigColumns = await client.execute(
     "PRAGMA table_info(webhook_configs)",
   );
-  if (
-    !webhookConfigColumns.rows.some((row) => String(row.name) === "label")
-  ) {
+  if (!webhookConfigColumns.rows.some((row) => String(row.name) === "label")) {
     await client.execute(
       "ALTER TABLE webhook_configs ADD COLUMN label TEXT NOT NULL DEFAULT 'Webhook'",
     );
@@ -669,6 +700,7 @@ export async function listWebhookConfigs(
 export async function createWebhookConfig(
   userId: string,
   input: WebhookConfigInput,
+  createdVia: "user" | "mcp" = "user",
 ): Promise<WebhookConfig> {
   await ensureDatabase();
   const now = Date.now();
@@ -682,6 +714,7 @@ export async function createWebhookConfig(
       secretToken: input.secretToken ?? null,
       createdAt: now,
       updatedAt: now,
+      createdVia,
     })
     .returning()
     .get();
@@ -722,6 +755,182 @@ export async function deleteWebhookConfig(
       and(eq(webhookConfigs.id, webhookId), eq(webhookConfigs.userId, userId)),
     )
     .returning({ id: webhookConfigs.id })
+    .get();
+  return Boolean(row);
+}
+
+export async function updateMcpWebhookConfig(
+  userId: string,
+  webhookId: number,
+  input: WebhookConfigInput,
+): Promise<WebhookConfig | null> {
+  await ensureDatabase();
+  const current = await db
+    .select()
+    .from(webhookConfigs)
+    .where(
+      and(
+        eq(webhookConfigs.id, webhookId),
+        eq(webhookConfigs.userId, userId),
+        eq(webhookConfigs.createdVia, "mcp"),
+      ),
+    )
+    .get();
+  if (!current) return null;
+  const row = await db
+    .update(webhookConfigs)
+    .set({
+      label: input.label ?? current.label,
+      url: input.url,
+      clientId:
+        input.clientId === undefined ? current.clientId : input.clientId,
+      secretToken:
+        input.secretToken === undefined
+          ? current.secretToken
+          : input.secretToken,
+      updatedAt: Date.now(),
+    })
+    .where(
+      and(
+        eq(webhookConfigs.id, webhookId),
+        eq(webhookConfigs.userId, userId),
+        eq(webhookConfigs.createdVia, "mcp"),
+      ),
+    )
+    .returning()
+    .get();
+  return row ?? null;
+}
+
+export async function deleteMcpWebhookConfig(
+  userId: string,
+  webhookId: number,
+): Promise<boolean> {
+  await ensureDatabase();
+  const row = await db
+    .delete(webhookConfigs)
+    .where(
+      and(
+        eq(webhookConfigs.id, webhookId),
+        eq(webhookConfigs.userId, userId),
+        eq(webhookConfigs.createdVia, "mcp"),
+      ),
+    )
+    .returning({ id: webhookConfigs.id })
+    .get();
+  return Boolean(row);
+}
+
+export async function createMcpAccessToken(input: {
+  userId: string;
+  label: string;
+  tokenHash: string;
+  expiresAt: number;
+}): Promise<McpAccessToken> {
+  await ensureDatabase();
+  const row = await db
+    .insert(mcpAccessTokens)
+    .values({
+      ...input,
+      createdAt: Date.now(),
+      lastUsedAt: null,
+      revokedAt: null,
+    })
+    .returning()
+    .get();
+  return row;
+}
+
+export async function listMcpAccessTokens(
+  userId: string,
+): Promise<McpAccessToken[]> {
+  await ensureDatabase();
+  return db
+    .select({
+      id: mcpAccessTokens.id,
+      userId: mcpAccessTokens.userId,
+      label: mcpAccessTokens.label,
+      createdAt: mcpAccessTokens.createdAt,
+      expiresAt: mcpAccessTokens.expiresAt,
+      lastUsedAt: mcpAccessTokens.lastUsedAt,
+      revokedAt: mcpAccessTokens.revokedAt,
+    })
+    .from(mcpAccessTokens)
+    .where(eq(mcpAccessTokens.userId, userId))
+    .orderBy(desc(mcpAccessTokens.createdAt))
+    .all();
+}
+
+export async function revokeMcpAccessToken(
+  userId: string,
+  tokenId: number,
+): Promise<boolean> {
+  await ensureDatabase();
+  const row = await db
+    .update(mcpAccessTokens)
+    .set({ revokedAt: Date.now() })
+    .where(
+      and(
+        eq(mcpAccessTokens.userId, userId),
+        eq(mcpAccessTokens.id, tokenId),
+        isNull(mcpAccessTokens.revokedAt),
+      ),
+    )
+    .returning({ id: mcpAccessTokens.id })
+    .get();
+  return Boolean(row);
+}
+
+export async function authenticateMcpToken(
+  tokenHash: string,
+): Promise<{ userId: string; id: number } | null> {
+  await ensureDatabase();
+  const now = Date.now();
+  const token = await db
+    .select({ id: mcpAccessTokens.id, userId: mcpAccessTokens.userId })
+    .from(mcpAccessTokens)
+    .where(
+      and(
+        eq(mcpAccessTokens.tokenHash, tokenHash),
+        isNull(mcpAccessTokens.revokedAt),
+      ),
+    )
+    .get();
+  if (!token) return null;
+  const active = await db
+    .select({ id: mcpAccessTokens.id })
+    .from(mcpAccessTokens)
+    .where(
+      and(
+        eq(mcpAccessTokens.id, token.id),
+        sql`${mcpAccessTokens.expiresAt} > ${now}`,
+      ),
+    )
+    .get();
+  if (!active) return null;
+  await db
+    .update(mcpAccessTokens)
+    .set({ lastUsedAt: now })
+    .where(eq(mcpAccessTokens.id, token.id))
+    .run();
+  return token;
+}
+
+export async function deleteMcpPortfolio(
+  id: number,
+  userId: string,
+): Promise<boolean> {
+  await ensureDatabase();
+  const row = await db
+    .delete(portfolios)
+    .where(
+      and(
+        eq(portfolios.id, id),
+        eq(portfolios.userId, userId),
+        eq(portfolios.createdVia, "mcp"),
+      ),
+    )
+    .returning({ id: portfolios.id })
     .get();
   return Boolean(row);
 }
@@ -899,11 +1108,12 @@ export async function listAllPortfolios(): Promise<
 export async function createPortfolio(
   name: string,
   userId = "admin",
+  createdVia: "user" | "mcp" = "user",
 ): Promise<Portfolio> {
   await ensureDatabase();
   return db
     .insert(portfolios)
-    .values({ userId, name, createdAt: Date.now() })
+    .values({ userId, name, createdAt: Date.now(), createdVia })
     .returning()
     .get();
 }

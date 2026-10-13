@@ -66,6 +66,7 @@ export interface Portfolio {
   userId: string;
   name: string;
   createdAt: number;
+  createdVia?: "user" | "mcp";
 }
 
 export interface UserProfile {
@@ -87,6 +88,17 @@ export interface WebhookConfig {
   secretToken: string | null;
   createdAt: number;
   updatedAt: number;
+  createdVia?: "user" | "mcp";
+}
+
+export interface McpAccessToken {
+  id: number;
+  userId: string;
+  label: string;
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
 }
 
 export interface WebhookConfigInput {

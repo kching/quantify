@@ -73,20 +73,24 @@ describe("trade and performance persistence", () => {
         url: "https://attacker.example.com/hook",
       }),
     ).toBeNull();
-    const updated = await database.updateWebhookConfig("webhook-user-a", first.id, {
-      label: "Updated alerts",
-      url: "https://example.com/updated",
-      secretToken: "secret-updated",
-    });
+    const updated = await database.updateWebhookConfig(
+      "webhook-user-a",
+      first.id,
+      {
+        label: "Updated alerts",
+        url: "https://example.com/updated",
+        secretToken: "secret-updated",
+      },
+    );
     expect(updated).toMatchObject({
       label: "Updated alerts",
       url: "https://example.com/updated",
       clientId: null,
       secretToken: "secret-updated",
     });
-    expect(await database.deleteWebhookConfig("webhook-user-b", second.id)).toBe(
-      false,
-    );
+    expect(
+      await database.deleteWebhookConfig("webhook-user-b", second.id),
+    ).toBe(false);
     expect(await database.deleteWebhookConfig("webhook-user-a", first.id)).toBe(
       true,
     );
@@ -123,9 +127,11 @@ describe("trade and performance persistence", () => {
       message: null,
     });
     expect(
-      (await database.db.$client.execute(
-        "PRAGMA foreign_key_list(webhook_delivery_logs)",
-      )).rows,
+      (
+        await database.db.$client.execute(
+          "PRAGMA foreign_key_list(webhook_delivery_logs)",
+        )
+      ).rows,
     ).toHaveLength(0);
     expect(
       await database.deleteWebhookConfig("webhook-log-user", config.id),
@@ -133,9 +139,9 @@ describe("trade and performance persistence", () => {
     expect(await database.listWebhookDeliveryLogs("webhook-log-user")).toEqual([
       log,
     ]);
-    expect(await database.listWebhookDeliveryLogs("other-webhook-user")).toEqual(
-      [],
-    );
+    expect(
+      await database.listWebhookDeliveryLogs("other-webhook-user"),
+    ).toEqual([]);
   });
 
   it("posts typed webhook events, follows redirects and logs only 2xx as success", async () => {
@@ -151,10 +157,16 @@ describe("trade and performance persistence", () => {
     const originalFetch = globalThis.fetch;
     let responseStatus = 204;
     const fetchMock = mock(
-      async (): Promise<Response> =>
-        new Response(null, { status: responseStatus }),
+      async (
+        _input: RequestInfo | URL,
+        _init?: RequestInit,
+      ): Promise<Response> => {
+        void _input;
+        void _init;
+        return new Response(null, { status: responseStatus });
+      },
     );
-    globalThis.fetch = fetchMock;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
     try {
       const payload = {
         type: "signal",
@@ -168,8 +180,8 @@ describe("trade and performance persistence", () => {
         status: "success",
         statusCode: 204,
       });
-      const requestInit = fetchMock.mock.calls[0]?.[1];
-      expect(fetchMock.mock.calls[0]?.[0]).toBe(config.url);
+      const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
+      expect(requestUrl).toBe(config.url);
       expect(requestInit).toMatchObject({ method: "POST", redirect: "follow" });
       expect(requestInit?.headers).toMatchObject({
         "Content-Type": "application/json",

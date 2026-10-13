@@ -197,6 +197,9 @@ export default function Preferences({
           <Link className="nav-item" href="/preferences/webhooks">
             <span className="sidebar-menu-label">Webhooks</span>
           </Link>
+          <Link className="nav-item" href="/preferences/mcp">
+            <span className="sidebar-menu-label">MCP access</span>
+          </Link>
           <SidebarGroup>
             <SidebarMenu aria-label="Preference pages">
               <SidebarMenuItem>
