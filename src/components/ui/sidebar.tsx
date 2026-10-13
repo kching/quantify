@@ -1,3 +1,5 @@
+"use client";
+
 import { Button as BaseButton } from "@base-ui/react/button";
 import Link from "next/link";
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";

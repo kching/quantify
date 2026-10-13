@@ -105,28 +105,6 @@
   .sidebar-footer {
     margin-top: auto;
   }
-  .sidebar-help {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    margin: 0 3px 16px;
-    padding: 12px;
-    border: 1px solid #2b374a;
-    border-radius: 9px;
-    color: #d1d9e5;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-  .sidebar-help svg {
-    width: 15px;
-    height: 15px;
-    margin-top: 1px;
-    color: #84aaf5;
-  }
-  .sidebar-help small {
-    color: #8190a5;
-    font-size: 11px;
-  }
   .sidebar-profile-wrap {
     position: relative;
     border-top: 1px solid #2b374a;
@@ -225,9 +203,6 @@
   }
   .app-sidebar[data-collapsed="true"] .sidebar-label {
     display: block;
-  }
-  .app-sidebar[data-collapsed="true"] .sidebar-help {
-    display: flex;
   }
   .app-sidebar[data-collapsed="true"] .sidebar-nav {
     display: grid;

@@ -66,10 +66,7 @@ export default function McpPreferences(): React.JSX.Element {
     await refresh();
   }
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-8">
-      <a href="/preferences/telegram" className="text-sm underline">
-        ← Preferences
-      </a>
+    <div className="max-w-3xl space-y-6">
       <header>
         <p className="text-sm uppercase tracking-wide">
           Preferences · Integrations
@@ -143,6 +140,6 @@ export default function McpPreferences(): React.JSX.Element {
           ))}
         </ul>
       </section>
-    </main>
+    </div>
   );
 }

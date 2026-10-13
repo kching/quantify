@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import type { UserProfile } from "@/core/types";
@@ -138,14 +137,6 @@ export default function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="sidebar-help">
-          <CircleHelp />
-          <span>
-            Decision support only
-            <br />
-            <small>No orders are sent</small>
-          </span>
-        </div>
         <div className="sidebar-profile-wrap">
           <button
             className="sidebar-profile"

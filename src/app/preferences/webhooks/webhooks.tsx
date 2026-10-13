@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -169,13 +168,7 @@ export default function WebhooksPreferences({
   }
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-10">
-      <div className="text-sm text-muted-foreground">
-        <Link href="/preferences/telegram" className="underline">
-          User preferences
-        </Link>{" "}
-        / Webhooks
-      </div>
+    <div className="space-y-6">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold">Webhooks</h1>
         <p className="text-muted-foreground">
@@ -372,6 +365,6 @@ export default function WebhooksPreferences({
           ))
         )}
       </section>
-    </main>
+    </div>
   );
 }

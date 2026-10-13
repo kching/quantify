@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import Preferences from "../preferences";
+import Preferences from "./preferences";
 import { getTelegramConnection } from "@/core/db";
 import { getCurrentUser } from "@/lib/current-user";
 
@@ -14,7 +14,6 @@ export default async function TelegramPreferencesPage(): Promise<React.JSX.Eleme
   );
   return (
     <Preferences
-      user={user}
       initialConnected={Boolean(connection)}
       botConfigured={botConfigured}
     />
