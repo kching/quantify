@@ -59,8 +59,10 @@ const sydneyDate = new Intl.DateTimeFormat("en-CA", {
 const signalOrder: SignalResult["signal"][] = ["SELL", "BUY", "HOLD"];
 
 interface SignalSummaryProps {
-  signals: readonly SignalResult[];
+  signals: readonly SignalWithTimeframe[];
 }
+
+type SignalWithTimeframe = SignalResult & { timeframe: "Daily" | "Hourly" };
 
 export default function Index({
   hasPortfolio,
@@ -203,7 +205,18 @@ export default function Index({
                         {latestPrice ? money.format(latestPrice) : "—"}
                       </td>
                       <td>
-                        <SignalSummary signals={row?.daily ?? []} />
+                        <SignalSummary
+                          signals={[
+                            ...(row?.daily ?? []).map((signal) => ({
+                              ...signal,
+                              timeframe: "Daily" as const,
+                            })),
+                            ...(row?.hourly ?? []).map((signal) => ({
+                              ...signal,
+                              timeframe: "Hourly" as const,
+                            })),
+                          ]}
+                        />
                       </td>
                       <td>
                         <DayPriceChange
@@ -230,7 +243,16 @@ export default function Index({
                         <td colSpan={5}>
                           <SignalList
                             symbol={holding.symbol}
-                            signals={row?.daily ?? []}
+                            signals={[
+                              ...(row?.daily ?? []).map((signal) => ({
+                                ...signal,
+                                timeframe: "Daily" as const,
+                              })),
+                              ...(row?.hourly ?? []).map((signal) => ({
+                                ...signal,
+                                timeframe: "Hourly" as const,
+                              })),
+                            ]}
                             busy={busy}
                             onRemoveSignal={onRemoveSignal}
                           />
@@ -318,7 +340,7 @@ function SignalList({
   onRemoveSignal,
 }: {
   symbol: string;
-  signals: readonly SignalResult[];
+  signals: readonly SignalWithTimeframe[];
   busy: boolean;
   onRemoveSignal: (symbol: string, signalId: number) => Promise<void>;
 }): React.JSX.Element {
@@ -339,6 +361,7 @@ function SignalList({
             <div className="signal-list-copy">
               <strong>{signal.label ?? signal.strategyName}</strong>
               <span>{signal.strategyName}</span>
+              <small className="signal-cadence">{signal.timeframe}</small>
               {signal.stateUpdatedAt != null && (
                 <small className="signal-updated-at">
                   Updated {dateTime.format(signal.stateUpdatedAt)}
@@ -373,7 +396,9 @@ function SignalSummary({ signals }: SignalSummaryProps): React.JSX.Element {
         const matchingSignals = signals.filter(
           (item) => item.signal === signal,
         );
-        const strategyNames = matchingSignals.map((item) => item.strategyName);
+        const strategyNames = matchingSignals.map(
+          (item) => `${item.strategyName} (${item.timeframe})`,
+        );
         const tooltip = strategyNames.length
           ? `${signal}: ${strategyNames.join(", ")}`
           : `No ${signal} signals`;

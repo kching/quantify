@@ -146,6 +146,11 @@
     color: #8995a6;
     font-size: 10px;
   }
+  .signal-cadence {
+    color: #60718a;
+    font-size: 10px;
+    font-weight: 600;
+  }
   .signal-list-item > button {
     margin-left: auto;
   }

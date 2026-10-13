@@ -6,6 +6,7 @@ import { evictExpiredTimeSeriesData } from "./db";
 import { publishMarketUpdate } from "./market-update-events";
 
 const HOUR_MS = 60 * 60 * 1000;
+const MARKET_UPDATE_INTERVAL_MS = 20 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 interface SchedulerGlobal {
@@ -89,7 +90,7 @@ export function startHourlyMarketScheduler(): void {
 
   schedulerGlobal.quantifyHourlyTimer = setInterval(
     () => void runMarketUpdate(),
-    HOUR_MS,
+    MARKET_UPDATE_INTERVAL_MS,
   );
   schedulerGlobal.quantifyHourlyTimer.unref?.();
   schedulerGlobal.quantifyDailyRetentionTimer = setInterval(
