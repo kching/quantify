@@ -1,4 +1,4 @@
-import { sendTelegramTestMessage } from "@/core/providers/telegram.provider";
+import { sendTelegramTestMessage } from "@/core/adapters/telegram.adapter";
 import { getTelegramConnection } from "@/core/db";
 import { getCurrentUser } from "@/lib/current-user";
 

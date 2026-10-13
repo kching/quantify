@@ -7,7 +7,7 @@ import {
 import {
   configureTelegramWebhook,
   getTelegramBotUsername,
-} from "@/core/providers/telegram.provider";
+} from "@/core/adapters/telegram.adapter";
 import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";

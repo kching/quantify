@@ -7,7 +7,7 @@ import {
 import {
   sendTelegramText,
   sendTelegramWelcomeMessage,
-} from "@/core/providers/telegram.provider";
+} from "@/core/adapters/telegram.adapter";
 
 export const dynamic = "force-dynamic";
 

@@ -14,7 +14,7 @@ import {
   TIME_SERIES_RETENTION_MS,
 } from "./db";
 import { capturePortfolioPerformance } from "./performance.service";
-import { sendTelegramSignalNotification } from "./providers/telegram.provider";
+import { sendTelegramSignalNotification } from "./adapters/telegram.adapter";
 import { fetchYahooCandles } from "./providers/yahoo.provider";
 import type {
   Candle,
