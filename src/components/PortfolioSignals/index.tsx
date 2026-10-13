@@ -359,7 +359,10 @@ function SignalList({
         >
           <div className="signal-list-main">
             <div className="signal-list-copy">
-              <strong>{signal.label ?? signal.strategyName}</strong>
+              <div className="signal-list-title">
+                <SignalPill signal={signal.signal} compact />
+                <strong>{signal.label ?? signal.strategyName}</strong>
+              </div>
               <span>{signal.strategyName}</span>
               <small className="signal-cadence">{signal.timeframe}</small>
               {signal.stateUpdatedAt != null && (
@@ -368,7 +371,6 @@ function SignalList({
                 </small>
               )}
             </div>
-            <SignalPill signal={signal.signal} compact />
           </div>
           {signal.signalId != null && (
             <Button
