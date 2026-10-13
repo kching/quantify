@@ -25,6 +25,7 @@ import type {
   SignalResult,
   SignalStrategy,
   StrategyParams,
+  WebhookConfig,
 } from "./types";
 
 const lastChecked = new Map<string, number>();
@@ -446,6 +447,78 @@ async function scanSymbol(
     dailyCandles: dailyCandles.slice(-90),
     hourlyCandles: hourlyCandles.slice(-48),
   };
+}
+
+export interface WebhookSnapshotSummary {
+  attempted: number;
+  delivered: number;
+  failed: number;
+  warnings: string[];
+}
+
+export async function sendWebhookPortfolioSnapshot(
+  config: WebhookConfig,
+): Promise<WebhookSnapshotSummary> {
+  const summary: WebhookSnapshotSummary = {
+    attempted: 0,
+    delivered: 0,
+    failed: 0,
+    warnings: [],
+  };
+  const portfolios = (await listPortfolios(config.userId)).filter(
+    (portfolio) => !config.excludedPortfolioIds.includes(portfolio.id),
+  );
+
+  for (const portfolio of portfolios) {
+    const [holdingStrategies, tradedSymbols] = await Promise.all([
+      listHoldingStrategies(portfolio.id, portfolio.userId),
+      listPortfolioTradeSymbols(portfolio.id),
+    ]);
+    const symbols = new Set([
+      ...portfolio.holdings.map(({ symbol }) => symbol),
+      ...tradedSymbols,
+    ]);
+
+    for (const symbol of symbols) {
+      const result = await scanSymbol(
+        symbol,
+        summary.warnings,
+        holdingStrategies.filter((strategy) => strategy.symbol === symbol),
+      );
+      const currentCandles = [
+        result.dailyCandles.at(-1),
+        result.hourlyCandles.at(-1),
+      ].filter((candle): candle is Candle => candle !== undefined);
+      const currentSignals = [...result.daily, ...result.hourly];
+      const events = [
+        ...currentCandles.map((data) => ({ type: "candle" as const, data })),
+        ...currentSignals.map((data) => ({ type: "signal" as const, data })),
+      ];
+
+      for (const event of events) {
+        summary.attempted += 1;
+        try {
+          const delivery = await invokeWebhook<Candle | SignalResult>(config, {
+            ...event,
+            portfolioId: portfolio.id,
+          });
+          if (delivery.delivered) summary.delivered += 1;
+          else {
+            summary.failed += 1;
+            summary.warnings.push(
+              `${config.url} ${event.type} event for portfolio ${portfolio.id}: ${delivery.log.message ?? "delivery failed"}`,
+            );
+          }
+        } catch (error: unknown) {
+          summary.failed += 1;
+          summary.warnings.push(
+            `${config.url} ${event.type} event for portfolio ${portfolio.id}: ${error instanceof Error ? error.message : "delivery failed"}`,
+          );
+        }
+      }
+    }
+  }
+  return summary;
 }
 
 export async function scanPortfolio(

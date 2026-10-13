@@ -5,6 +5,7 @@ import {
   listWebhookConfigs,
   updateWebhookConfig,
 } from "@/core/db";
+import { sendWebhookPortfolioSnapshot } from "@/core/market";
 import type { WebhookConfigInput } from "@/core/types";
 import { getCurrentUser } from "@/lib/current-user";
 
@@ -101,7 +102,32 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     );
   const webhook = await createWebhookConfig(user.id, input);
-  return Response.json({ webhook }, { status: 201 });
+  const initialSync = await sendWebhookPortfolioSnapshot(webhook);
+  const status =
+    initialSync.attempted === 0
+      ? "no_data"
+      : initialSync.failed === 0
+        ? "success"
+        : initialSync.delivered === 0
+          ? "failed"
+          : "partial";
+  const message =
+    initialSync.attempted === 0
+      ? "No current portfolio data was available to send."
+      : initialSync.failed === 0
+        ? `Sent ${initialSync.delivered} current portfolio update${initialSync.delivered === 1 ? "" : "s"}.`
+        : `Sent ${initialSync.delivered} of ${initialSync.attempted} current portfolio updates; ${initialSync.failed} failed.${initialSync.warnings[0] ? ` ${initialSync.warnings[0]}` : ""}`;
+  return Response.json(
+    {
+      webhook,
+      initialSync: {
+        ...initialSync,
+        status,
+        message,
+      },
+    },
+    { status: 201 },
+  );
 }
 
 export async function PATCH(request: Request): Promise<Response> {

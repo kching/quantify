@@ -92,6 +92,7 @@ export default function WebhooksPreferences({
 
   async function saveWebhook(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    const creating = editingId === null;
     setBusy(true);
     setMessage("");
     setError(false);
@@ -106,7 +107,33 @@ export default function WebhooksPreferences({
         throw new Error(String(body.error ?? "Unable to save webhook."));
       resetForm();
       await loadWebhooks();
-      setMessage(editingId === null ? "Webhook added." : "Webhook updated.");
+      if (creating) {
+        const initialSync = body.initialSync;
+        if (
+          typeof initialSync === "object" &&
+          initialSync !== null &&
+          "status" in initialSync &&
+          "message" in initialSync
+        ) {
+          const sync = initialSync as {
+            status: unknown;
+            message: unknown;
+          };
+          const status = sync.status;
+          const deliveryIssue = status === "failed" || status === "partial";
+          setError(deliveryIssue);
+          setMessage(
+            `Webhook added. ${typeof sync.message === "string" ? sync.message : "Initial delivery finished."}`,
+          );
+        } else {
+          setError(true);
+          setMessage(
+            "Webhook added, but initial delivery status is unavailable.",
+          );
+        }
+      } else {
+        setMessage("Webhook updated.");
+      }
     } catch (reason) {
       setError(true);
       setMessage(
