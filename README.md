@@ -56,6 +56,10 @@ Quantify uses one shared Telegram bot for all users. Create the bot with [@BotFa
 
 Users connect from **Preferences → Telegram** by generating a temporary QR code, scanning it in Telegram, and tapping **Start**. The code expires after 10 minutes and can only be used once. Quantify stores the resulting Telegram chat ID against the signed-in user; the shared bot token stays in server configuration. Users can test or disconnect the connection from the same page, or send `/stop` to the bot.
 
+## MCP sweeps
+
+The MCP `run_sweep` tool queues a sweep and returns its ID immediately. Agents can poll `get_sweep_status` and read pages with `get_sweep_results` after completion. Completed runs are stored for one hour in the application's `data/tmp/mcp-sweep-results` directory, alongside the SQLite database. The authenticated `GET /api/mcp/sweeps/{sweepId}/results` endpoint returns HTTP 404 for expired or missing results; the MCP tool returns a 404 tool error. A Bun cron job checks temporary results every hour and removes only files whose stored expiry time has passed. Queued or interrupted sweeps resume when the server starts.
+
 ## Docker deployment
 
 The production image is built from the multi-stage `Dockerfile` and runs the Next.js standalone server as an unprivileged user. The SQLite database lives in `/app/data`; use the included `compose.yml` so it remains in a named Docker volume:

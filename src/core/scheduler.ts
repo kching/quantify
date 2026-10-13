@@ -1,9 +1,12 @@
+import { Cron } from "croner";
 import {
   updateAllPortfolioDailyCandles,
   updateAllPortfolioMarkets,
 } from "./market";
 import { evictExpiredTimeSeriesData } from "./db";
 import { publishMarketUpdate } from "./market-update-events";
+import { wakeMcpSweepJobs } from "./mcp-sweep-jobs";
+import { cleanupExpiredMcpSweepResults } from "./mcp-sweep-results";
 
 const HOUR_MS = 60 * 60 * 1000;
 const MARKET_UPDATE_INTERVAL_MS = 20 * 60 * 1000;
@@ -15,6 +18,7 @@ interface SchedulerGlobal {
   quantifyDailyCandleTimer?: ReturnType<typeof setTimeout>;
   quantifyHourlyRunActive?: boolean;
   quantifyRetentionRunActive?: boolean;
+  quantifyMcpSweepCleanupJob?: Cron;
 }
 
 const schedulerGlobal = globalThis as typeof globalThis & SchedulerGlobal;
@@ -86,6 +90,30 @@ async function runStartupWork(): Promise<void> {
 }
 
 export function startHourlyMarketScheduler(): void {
+  if (!schedulerGlobal.quantifyMcpSweepCleanupJob) {
+    schedulerGlobal.quantifyMcpSweepCleanupJob = new Cron(
+      "0 * * * *",
+      {
+        timezone: "UTC",
+        protect: true,
+        catch: (error: unknown) => {
+          console.error("[quantify] MCP sweep result cleanup failed.", error);
+        },
+      },
+      async () => {
+        await cleanupExpiredMcpSweepResults();
+      },
+    );
+    void cleanupExpiredMcpSweepResults().catch((error: unknown) => {
+      console.error(
+        "[quantify] MCP sweep result startup cleanup failed.",
+        error,
+      );
+    });
+    void wakeMcpSweepJobs().catch((error: unknown) => {
+      console.error("[quantify] MCP sweep job recovery failed.", error);
+    });
+  }
   if (schedulerGlobal.quantifyHourlyTimer) return;
 
   schedulerGlobal.quantifyHourlyTimer = setInterval(

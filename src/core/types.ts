@@ -110,6 +110,14 @@ export interface McpSweep {
   cadence: CandleInterval;
   days: number;
   totalRuns: number;
+  completedRuns: number;
+  status: "queued" | "running" | "completed" | "failed";
+  error: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  resultsExpiresAt: number | null;
+  bestReturnRunIndex: number | null;
+  lowestDrawdownRunIndex: number | null;
   createdAt: number;
 }
 

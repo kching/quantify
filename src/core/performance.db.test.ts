@@ -7,6 +7,10 @@ import type { Candle } from "./types";
 mock.module("server-only", () => ({}));
 const databaseDirectory = mkdtempSync(join(tmpdir(), "quantify-performance-"));
 process.env.QUANTIFY_DB_PATH = join(databaseDirectory, "test.sqlite");
+process.env.QUANTIFY_MCP_SWEEP_TMP_DIR = join(
+  databaseDirectory,
+  "sweep-results",
+);
 
 const database = await import("./db");
 const webhookAdapter = await import("./adapters/webhook.adapter");
@@ -31,6 +35,7 @@ function candle(symbol: string, timestamp: number, close: number): Candle {
 afterAll(async () => {
   await database.db.$client.close();
   rmSync(databaseDirectory, { recursive: true, force: true });
+  delete process.env.QUANTIFY_MCP_SWEEP_TMP_DIR;
 });
 
 describe("trade and performance persistence", () => {
@@ -647,12 +652,7 @@ describe("trade and performance persistence", () => {
 
     const pageOne = await database.listTradePage(portfolio.id, 1, undefined, 6);
     const pageTwo = await database.listTradePage(portfolio.id, 2, undefined, 6);
-    const filtered = await database.listTradePage(
-      portfolio.id,
-      1,
-      "BBB.AX",
-      6,
-    );
+    const filtered = await database.listTradePage(portfolio.id, 1, "BBB.AX", 6);
     expect(pageOne.trades).toHaveLength(6);
     expect(pageOne.trades[0].id).toBe(insertedTrades[7].id);
     expect(pageTwo.trades.map((trade) => trade.id)).toEqual([
@@ -813,6 +813,15 @@ describe("trade and performance persistence", () => {
         },
       ],
     );
+    expect(sweep.resultsExpiresAt).toBeGreaterThan(Date.now());
+    expect(
+      (
+        await database.db.$client.execute({
+          sql: "SELECT COUNT(*) AS count FROM mcp_sweep_runs WHERE sweep_id = ?",
+          args: [sweep.id],
+        })
+      ).rows[0]?.count,
+    ).toBe(0);
     expect(await database.getMcpSweep("mcp-sweep-other", sweep.id)).toBeNull();
     expect(
       await database.listMcpSweepRuns("mcp-sweep-other", sweep.id),
@@ -876,6 +885,139 @@ describe("trade and performance persistence", () => {
     ).toMatchObject([
       { id: signal.id, lastSignal: "BUY", signalUpdatedAt: now },
     ]);
+  });
+
+  it("persists queued MCP sweeps, progress, results, and restart recovery", async () => {
+    await database.ensureUserProfile({
+      id: "queued-sweep-owner",
+      name: "Owner",
+    });
+    const queued = await database.enqueueMcpSweep(
+      {
+        userId: "queued-sweep-owner",
+        symbol: "ABC",
+        strategyId: "rsi",
+        cadence: "1d",
+        days: 90,
+        totalRuns: 2,
+      },
+      [{ period: 5 }, { period: 10 }],
+    );
+    expect(queued).toMatchObject({ status: "queued", completedRuns: 0 });
+    expect(await database.getMcpSweep("another-user", queued.id)).toBeNull();
+
+    const claimed = await database.claimNextMcpSweep();
+    expect(claimed).toMatchObject({
+      sweep: { id: queued.id, status: "running" },
+      parameterSets: [{ period: 5 }, { period: 10 }],
+    });
+    await database.updateMcpSweepProgress(queued.id, 1);
+    expect(
+      await database.getMcpSweep("queued-sweep-owner", queued.id),
+    ).toMatchObject({
+      status: "running",
+      completedRuns: 1,
+    });
+    await database.resetInterruptedMcpSweeps();
+    expect(
+      await database.getMcpSweep("queued-sweep-owner", queued.id),
+    ).toMatchObject({
+      status: "queued",
+      completedRuns: 0,
+    });
+    expect((await database.claimNextMcpSweep())?.sweep.id).toBe(queued.id);
+    await database.completeMcpSweep(
+      queued.id,
+      [
+        {
+          runIndex: 0,
+          params: { period: 5 },
+          metrics: { strategyReturnPct: 1 },
+        },
+        {
+          runIndex: 1,
+          params: { period: 10 },
+          metrics: { strategyReturnPct: 2 },
+        },
+      ],
+      { bestReturnRunIndex: 1, lowestDrawdownRunIndex: 0 },
+    );
+    expect(
+      await database.getMcpSweep("queued-sweep-owner", queued.id),
+    ).toMatchObject({
+      status: "completed",
+      completedRuns: 2,
+      bestReturnRunIndex: 1,
+    });
+    expect(
+      await database.listMcpSweepRuns("queued-sweep-owner", queued.id),
+    ).toHaveLength(2);
+
+    const failed = await database.enqueueMcpSweep(
+      {
+        userId: "queued-sweep-owner",
+        symbol: "XYZ",
+        strategyId: "rsi",
+        cadence: "1h",
+        days: 30,
+        totalRuns: 1,
+      },
+      [{ period: 14 }],
+    );
+    expect((await database.claimNextMcpSweep())?.sweep.id).toBe(failed.id);
+    await database.failMcpSweep(failed.id, "Market data unavailable.");
+    expect(
+      await database.getMcpSweep("queued-sweep-owner", failed.id),
+    ).toMatchObject({
+      status: "failed",
+      error: "Market data unavailable.",
+    });
+    expect(await database.claimNextMcpSweep()).toBeNull();
+  });
+
+  it("returns HTTP 404 when an MCP sweep result has expired", async () => {
+    await database.ensureUserProfile({
+      id: "expired-sweep-owner",
+      name: "Owner",
+    });
+    const token = `qcp_${"a".repeat(64)}`;
+    const { hashMcpSecret } = await import("../lib/mcp-tokens");
+    await database.createMcpAccessToken({
+      userId: "expired-sweep-owner",
+      label: "Test token",
+      tokenHash: await hashMcpSecret(token),
+      expiresAt: Date.now() + 60_000,
+    });
+    const sweep = await database.createMcpSweep(
+      {
+        userId: "expired-sweep-owner",
+        symbol: "ABC",
+        strategyId: "rsi",
+        cadence: "1d",
+        days: 30,
+        totalRuns: 1,
+      },
+      [
+        {
+          runIndex: 0,
+          params: { period: 14 },
+          metrics: { strategyReturnPct: 2 },
+        },
+      ],
+    );
+    const { GET } = await import("../app/api/mcp/sweeps/[id]/results/route");
+    const request = (): Request =>
+      new Request(`http://localhost/api/mcp/sweeps/${sweep.id}/results`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    const context = { params: Promise.resolve({ id: String(sweep.id) }) };
+    expect((await GET(request(), context)).status).toBe(200);
+
+    await database.db.$client.execute({
+      sql: "UPDATE mcp_sweeps SET results_expires_at = ? WHERE id = ?",
+      args: [Date.now() - 1, sweep.id],
+    });
+    expect((await GET(request(), context)).status).toBe(404);
   });
 
   it("restricts MCP ledger changes to MCP portfolios and pages trade and cash ledgers consistently", async () => {
@@ -1019,8 +1161,18 @@ describe("trade and performance persistence", () => {
         "mcp-ledger-owner",
       );
     }
-    const firstTradePage = await database.listTradePage(mcp.id, 1, undefined, 6);
-    const secondTradePage = await database.listTradePage(mcp.id, 2, undefined, 6);
+    const firstTradePage = await database.listTradePage(
+      mcp.id,
+      1,
+      undefined,
+      6,
+    );
+    const secondTradePage = await database.listTradePage(
+      mcp.id,
+      2,
+      undefined,
+      6,
+    );
     const firstCashPage = await database.listCashTransactionPage(mcp.id, 1, 6);
     expect(firstTradePage).toMatchObject({
       page: 1,

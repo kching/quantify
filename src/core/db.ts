@@ -37,6 +37,7 @@ import type {
   McpSweep,
   McpSweepRun,
 } from "./types";
+import { readMcpSweepResults, writeMcpSweepResults } from "./mcp-sweep-results";
 
 const users = sqliteTable(
   "users",
@@ -173,12 +174,30 @@ const mcpSweeps = sqliteTable(
     cadence: text("cadence", { enum: ["1h", "1d"] }).notNull(),
     days: integer("days").notNull(),
     totalRuns: integer("total_runs").notNull(),
+    completedRuns: integer("completed_runs").notNull().default(0),
+    status: text("status", {
+      enum: ["queued", "running", "completed", "failed"],
+    })
+      .notNull()
+      .default("completed"),
+    error: text("error"),
+    startedAt: integer("started_at"),
+    finishedAt: integer("finished_at"),
+    resultsExpiresAt: integer("results_expires_at"),
+    bestReturnRunIndex: integer("best_return_run_index"),
+    lowestDrawdownRunIndex: integer("lowest_drawdown_run_index"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
     index("mcp_sweeps_user_created").on(table.userId, table.createdAt),
   ],
 );
+const mcpSweepJobs = sqliteTable("mcp_sweep_jobs", {
+  sweepId: integer("sweep_id")
+    .primaryKey()
+    .references(() => mcpSweeps.id, { onDelete: "cascade" }),
+  parameterSets: text("parameter_sets").notNull(),
+});
 const mcpSweepRuns = sqliteTable(
   "mcp_sweep_runs",
   {
@@ -380,6 +399,7 @@ export const db = drizzle({
     telegramLinkTokens,
     mcpAccessTokens,
     mcpSweeps,
+    mcpSweepJobs,
     mcpSweepRuns,
     webhookConfigs,
     webhookDeliveryLogs,
@@ -411,6 +431,7 @@ async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS mcp_access_tokens_user_id ON mcp_access_tokens(user_id);
     CREATE TABLE IF NOT EXISTS mcp_sweeps (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, symbol TEXT NOT NULL, strategy_id TEXT NOT NULL, cadence TEXT NOT NULL, days INTEGER NOT NULL, total_runs INTEGER NOT NULL, created_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS mcp_sweeps_user_created ON mcp_sweeps(user_id, created_at);
+    CREATE TABLE IF NOT EXISTS mcp_sweep_jobs (sweep_id INTEGER PRIMARY KEY REFERENCES mcp_sweeps(id) ON DELETE CASCADE, parameter_sets TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS mcp_sweep_runs (sweep_id INTEGER NOT NULL REFERENCES mcp_sweeps(id) ON DELETE CASCADE, run_index INTEGER NOT NULL, params TEXT NOT NULL, metrics TEXT NOT NULL, PRIMARY KEY(sweep_id, run_index));
     CREATE TABLE IF NOT EXISTS webhook_delivery_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, webhook_config_id INTEGER, event_type TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL, status_code INTEGER, message TEXT, timestamp INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
@@ -425,6 +446,28 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, average_unit_price REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
     CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
   `);
+  const sweepColumns = await client.execute("PRAGMA table_info(mcp_sweeps)");
+  const sweepColumnNames = new Set(
+    sweepColumns.rows.map((row) => String(row.name)),
+  );
+  const sweepMigrations = [
+    ["completed_runs", "INTEGER NOT NULL DEFAULT 0"],
+    ["status", "TEXT NOT NULL DEFAULT 'completed'"],
+    ["error", "TEXT"],
+    ["started_at", "INTEGER"],
+    ["finished_at", "INTEGER"],
+    ["results_expires_at", "INTEGER"],
+    ["best_return_run_index", "INTEGER"],
+    ["lowest_drawdown_run_index", "INTEGER"],
+  ] as const;
+  for (const [name, definition] of sweepMigrations) {
+    if (!sweepColumnNames.has(name))
+      await client.execute(
+        `ALTER TABLE mcp_sweeps ADD COLUMN ${name} ${definition}`,
+      );
+  }
+  if (!sweepColumnNames.has("completed_runs"))
+    await client.execute("UPDATE mcp_sweeps SET completed_runs = total_runs");
   for (const tableName of ["webhook_configs", "portfolios"] as const) {
     const columns = await client.execute(`PRAGMA table_info(${tableName})`);
     if (!columns.rows.some((row) => String(row.name) === "created_via"))
@@ -991,28 +1034,177 @@ export async function authenticateMcpToken(
 }
 
 export async function createMcpSweep(
-  input: Omit<McpSweep, "id" | "createdAt">,
+  input: Pick<
+    McpSweep,
+    "userId" | "symbol" | "strategyId" | "cadence" | "days" | "totalRuns"
+  >,
   runs: readonly Omit<McpSweepRun, "sweepId">[],
 ): Promise<McpSweep> {
   await ensureDatabase();
+  const now = Date.now();
   const sweep = await db
     .insert(mcpSweeps)
     .values({
       ...input,
-      createdAt: Date.now(),
+      completedRuns: 0,
+      status: "running",
+      createdAt: now,
     })
     .returning()
     .get();
-  for (let offset = 0; offset < runs.length; offset += 100) {
-    const batch = runs.slice(offset, offset + 100).map((run) => ({
-      sweepId: sweep.id,
-      runIndex: run.runIndex,
-      params: JSON.stringify(run.params),
-      metrics: JSON.stringify(run.metrics),
-    }));
-    await db.insert(mcpSweepRuns).values(batch).run();
+  try {
+    const resultsExpiresAt = await writeMcpSweepResults(sweep.id, runs);
+    await db
+      .update(mcpSweeps)
+      .set({
+        status: "completed",
+        completedRuns: runs.length,
+        finishedAt: Date.now(),
+        resultsExpiresAt,
+      })
+      .where(eq(mcpSweeps.id, sweep.id))
+      .run();
+    return {
+      ...sweep,
+      status: "completed",
+      completedRuns: runs.length,
+      finishedAt: Date.now(),
+      resultsExpiresAt,
+    };
+  } catch (error) {
+    await db.delete(mcpSweeps).where(eq(mcpSweeps.id, sweep.id)).run();
+    throw error;
+  }
+}
+
+export async function enqueueMcpSweep(
+  input: Pick<
+    McpSweep,
+    "userId" | "symbol" | "strategyId" | "cadence" | "days" | "totalRuns"
+  >,
+  parameterSets: readonly StrategyParams[],
+): Promise<McpSweep> {
+  await ensureDatabase();
+  const sweep = await db
+    .insert(mcpSweeps)
+    .values({ ...input, status: "queued", createdAt: Date.now() })
+    .returning()
+    .get();
+  try {
+    await db
+      .insert(mcpSweepJobs)
+      .values({
+        sweepId: sweep.id,
+        parameterSets: JSON.stringify(parameterSets),
+      })
+      .run();
+  } catch (error) {
+    await db.delete(mcpSweeps).where(eq(mcpSweeps.id, sweep.id)).run();
+    throw error;
   }
   return sweep;
+}
+
+export async function resetInterruptedMcpSweeps(): Promise<void> {
+  await ensureDatabase();
+  await db
+    .update(mcpSweeps)
+    .set({ status: "queued", completedRuns: 0, startedAt: null })
+    .where(eq(mcpSweeps.status, "running"))
+    .run();
+}
+
+export async function claimNextMcpSweep(): Promise<{
+  sweep: McpSweep;
+  parameterSets: StrategyParams[];
+} | null> {
+  await ensureDatabase();
+  const pending = await db
+    .select()
+    .from(mcpSweeps)
+    .where(eq(mcpSweeps.status, "queued"))
+    .orderBy(mcpSweeps.createdAt, mcpSweeps.id)
+    .limit(1)
+    .get();
+  if (!pending) return null;
+  const claimed = await db
+    .update(mcpSweeps)
+    .set({
+      status: "running",
+      completedRuns: 0,
+      startedAt: Date.now(),
+      error: null,
+    })
+    .where(and(eq(mcpSweeps.id, pending.id), eq(mcpSweeps.status, "queued")))
+    .returning()
+    .get();
+  if (!claimed) return claimNextMcpSweep();
+  await db
+    .delete(mcpSweepRuns)
+    .where(eq(mcpSweepRuns.sweepId, claimed.id))
+    .run();
+  const job = await db
+    .select()
+    .from(mcpSweepJobs)
+    .where(eq(mcpSweepJobs.sweepId, claimed.id))
+    .get();
+  if (!job) {
+    await failMcpSweep(claimed.id, "Sweep job data is missing.");
+    return claimNextMcpSweep();
+  }
+  return {
+    sweep: claimed,
+    parameterSets: JSON.parse(job.parameterSets) as StrategyParams[],
+  };
+}
+
+export async function updateMcpSweepProgress(
+  sweepId: number,
+  completedRuns: number,
+): Promise<void> {
+  await ensureDatabase();
+  await db
+    .update(mcpSweeps)
+    .set({ completedRuns })
+    .where(and(eq(mcpSweeps.id, sweepId), eq(mcpSweeps.status, "running")))
+    .run();
+}
+
+export async function completeMcpSweep(
+  sweepId: number,
+  runs: readonly Omit<McpSweepRun, "sweepId">[],
+  summary: {
+    bestReturnRunIndex: number;
+    lowestDrawdownRunIndex: number;
+  },
+): Promise<void> {
+  await ensureDatabase();
+  const resultsExpiresAt = await writeMcpSweepResults(sweepId, runs);
+  await db
+    .update(mcpSweeps)
+    .set({
+      status: "completed",
+      completedRuns: runs.length,
+      finishedAt: Date.now(),
+      resultsExpiresAt,
+      ...summary,
+    })
+    .where(eq(mcpSweeps.id, sweepId))
+    .run();
+  await db.delete(mcpSweepJobs).where(eq(mcpSweepJobs.sweepId, sweepId)).run();
+}
+
+export async function failMcpSweep(
+  sweepId: number,
+  message: string,
+): Promise<void> {
+  await ensureDatabase();
+  await db
+    .update(mcpSweeps)
+    .set({ status: "failed", error: message, finishedAt: Date.now() })
+    .where(eq(mcpSweeps.id, sweepId))
+    .run();
+  await db.delete(mcpSweepJobs).where(eq(mcpSweepJobs.sweepId, sweepId)).run();
 }
 
 export async function listMcpSweeps(
@@ -1052,6 +1244,17 @@ export async function listMcpSweepRuns(
   await ensureDatabase();
   const ownedSweep = await getMcpSweep(userId, sweepId);
   if (!ownedSweep) return [];
+  if (ownedSweep.resultsExpiresAt !== null) {
+    const storedRuns = await readMcpSweepResults(
+      sweepId,
+      ownedSweep.resultsExpiresAt,
+    );
+    return (storedRuns ?? [])
+      .slice(offset, offset + Math.max(1, Math.min(Math.floor(limit), 200)))
+      .map((run) => ({ ...run, sweepId }));
+  }
+  if (Date.now() >= (ownedSweep.finishedAt ?? ownedSweep.createdAt) + 3_600_000)
+    return [];
   const rows = await db
     .select()
     .from(mcpSweepRuns)
@@ -1075,7 +1278,14 @@ export async function getMcpSweepRun(
 ): Promise<{ sweep: McpSweep; run: McpSweepRun } | null> {
   await ensureDatabase();
   const sweep = await getMcpSweep(userId, sweepId);
-  if (!sweep) return null;
+  if (!sweep || sweep.status !== "completed") return null;
+  if (sweep.resultsExpiresAt !== null) {
+    const runs = await readMcpSweepResults(sweepId, sweep.resultsExpiresAt);
+    const run = runs?.find((item) => item.runIndex === runIndex);
+    return run ? { sweep, run: { ...run, sweepId } } : null;
+  }
+  if (Date.now() >= (sweep.finishedAt ?? sweep.createdAt) + 3_600_000)
+    return null;
   const row = await db
     .select()
     .from(mcpSweepRuns)

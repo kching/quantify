@@ -3,12 +3,11 @@ import { z } from "zod";
 import {
   authenticateMcpToken,
   addHolding,
-  createMcpSweep,
+  enqueueMcpSweep,
   createPortfolio,
   createWebhookConfig,
   deleteMcpPortfolio,
   deleteMcpWebhookConfig,
-  getCandles,
   getMcpSweep,
   getMcpSweepRun,
   listAlerts,
@@ -35,18 +34,21 @@ import {
   updateMcpTrade,
   updatePortfolioName,
   updateMcpWebhookConfig,
-  TIME_SERIES_RETENTION_MS,
   DAILY_CANDLE_HISTORY_DAYS,
-  DAILY_CANDLE_RETENTION_MS,
   saveCandles,
 } from "@/core/db";
 import { refreshPortfolioSymbol, scanPortfolio } from "@/core/market";
 import { capturePortfolioPerformance } from "@/core/performance.service";
 import { strategies, loadStrategy } from "@/core/engine";
-import { runBacktestSweepWorkers } from "@/core/backtest-workers";
+import { wakeMcpSweepJobs } from "@/core/mcp-sweep-jobs";
+import {
+  MCP_SWEEP_RESULT_TTL_MS,
+  readMcpSweepResults,
+} from "@/core/mcp-sweep-results";
 import { fetchYahooCandles } from "@/core/providers/yahoo.provider";
 import type {
   CandleInterval,
+  McpSweepRun,
   StrategyParams,
   WebhookConfigInput,
 } from "@/core/types";
@@ -62,6 +64,15 @@ function toolResult(value: unknown) {
       value !== null && typeof value === "object" && !Array.isArray(value)
         ? (value as Record<string, unknown>)
         : { items: value },
+  };
+}
+
+function expiredSweepResult() {
+  const error = "Sweep results expired or are unavailable after one hour.";
+  return {
+    isError: true,
+    content: [{ type: "text" as const, text: `404: ${error}` }],
+    structuredContent: { status: 404, error },
   };
 }
 
@@ -159,7 +170,7 @@ function makeServer(userId: string): McpServer {
   server.registerTool(
     "run_sweep",
     {
-      description: `Run a parameter sweep for a stock. Supply an integer [min,max,step] tuple for each numeric strategy parameter. Maximum ${MAX_SWEEP_COMBINATIONS.toLocaleString()} combinations.`,
+      description: `Queue a parameter sweep for a stock and return its sweep ID immediately. Poll get_sweep_status, then read get_sweep_results when completed. Results expire one hour after completion. Supply an integer [min,max,step] tuple for each numeric strategy parameter. Maximum ${MAX_SWEEP_COMBINATIONS.toLocaleString()} combinations.`,
       inputSchema: z.object({
         symbol: z.string().min(1).max(20),
         strategyId: z.string(),
@@ -231,95 +242,41 @@ function makeServer(userId: string): McpServer {
           );
       }
       const interval: CandleInterval = cadence === "hourly" ? "1h" : "1d";
-      const historyDays =
-        interval === "1h"
-          ? Math.floor(TIME_SERIES_RETENTION_MS / 86_400_000)
-          : DAILY_CANDLE_HISTORY_DAYS;
-      const cutoff =
-        Date.now() -
-        (interval === "1h"
-          ? TIME_SERIES_RETENTION_MS
-          : DAILY_CANDLE_RETENTION_MS);
-      let candles = await getCandles(symbol, interval);
-      if (!candles.length || candles[0]!.timestamp > cutoff) {
-        const fetched = await fetchYahooCandles(symbol, interval, historyDays);
-        await saveCandles(
-          interval,
-          fetched.filter((candle) => candle.timestamp >= cutoff),
-        );
-        candles = await getCandles(symbol, interval);
-      }
-      if (candles.length < 70)
-        throw new Error(`At least 70 ${cadence} candles are needed.`);
-      const window = candles.filter(
-        (candle) =>
-          candle.timestamp >=
-          Date.now() - Math.min(days, historyDays) * 86_400_000,
-      );
-      const runs: Array<{
-        runIndex: number;
-        params: StrategyParams;
-        metrics: Record<string, number>;
-      }> = [];
-      await runBacktestSweepWorkers(
-        symbol,
-        window,
-        strategyId,
-        combinations,
-        (result, params, runIndex) =>
-          runs.push({
-            runIndex,
-            params,
-            metrics: {
-              finalBalance: result.finalBalance,
-              strategyReturnPct: result.strategyReturnPct,
-              buyAndHoldReturnPct: result.buyAndHoldReturnPct,
-              winRatePct: result.winRatePct,
-              maxDrawdownPct: result.maxDrawdownPct,
-              totalReturnPct: result.totalReturnPct,
-            },
-          }),
-      );
-      runs.sort((a, b) => a.runIndex - b.runIndex);
-      const sweep = await createMcpSweep(
+      const historyDays = interval === "1h" ? 365 : DAILY_CANDLE_HISTORY_DAYS;
+      const sweep = await enqueueMcpSweep(
         {
           userId,
           symbol,
           strategyId,
           cadence: interval,
           days: Math.min(days, historyDays),
-          totalRuns: runs.length,
+          totalRuns: combinations.length,
         },
-        runs,
+        combinations,
       );
-      return toolResult({
-        sweep,
-        summary: {
-          totalRuns: runs.length,
-          bestReturnRunIndex: runs.reduce(
-            (best, run) =>
-              run.metrics.strategyReturnPct >
-              runs[best]!.metrics.strategyReturnPct
-                ? run.runIndex
-                : best,
-            0,
-          ),
-          lowestDrawdownRunIndex: runs.reduce(
-            (best, run) =>
-              run.metrics.maxDrawdownPct < runs[best]!.metrics.maxDrawdownPct
-                ? run.runIndex
-                : best,
-            0,
-          ),
-        },
-      });
+      await wakeMcpSweepJobs();
+      return toolResult({ sweep, sweepId: sweep.id, status: sweep.status });
+    },
+  );
+  server.registerTool(
+    "get_sweep_status",
+    {
+      description:
+        "Read a sweep's current queued, running, completed, or failed state and progress. Completed results expire one hour after completion.",
+      inputSchema: z.object({ sweepId: z.number().int().positive() }),
+    },
+    async ({ sweepId }) => {
+      await wakeMcpSweepJobs();
+      const sweep = await getMcpSweep(userId, sweepId);
+      if (!sweep) throw new Error("Sweep not found.");
+      return toolResult({ sweep });
     },
   );
   server.registerTool(
     "get_sweep_results",
     {
       description:
-        "Read a bounded page of runs from a completed sweep. Results are ordered by run index.",
+        "Read a bounded page of runs from a completed sweep. Results expire one hour after completion; expired or missing results report a 404 tool error. The authenticated GET /api/mcp/sweeps/{sweepId}/results endpoint returns HTTP 404 for the same case. Check status before selecting a result. Results are ordered by run index.",
       inputSchema: z.object({
         sweepId: z.number().int().positive(),
         offset: z.number().int().min(0).default(0),
@@ -327,13 +284,30 @@ function makeServer(userId: string): McpServer {
       }),
     },
     async ({ sweepId, offset, limit }) => {
+      await wakeMcpSweepJobs();
       const sweep = await getMcpSweep(userId, sweepId);
       if (!sweep) throw new Error("Sweep not found.");
+      let runs: McpSweepRun[] = [];
+      if (sweep.status === "completed") {
+        const expiresAt =
+          sweep.resultsExpiresAt ??
+          (sweep.finishedAt ?? sweep.createdAt) + MCP_SWEEP_RESULT_TTL_MS;
+        if (Date.now() >= expiresAt) return expiredSweepResult();
+        if (sweep.resultsExpiresAt !== null) {
+          const storedRuns = await readMcpSweepResults(sweep.id, expiresAt);
+          if (!storedRuns) return expiredSweepResult();
+          runs = storedRuns
+            .slice(offset, offset + limit)
+            .map((run) => ({ ...run, sweepId }));
+        } else {
+          runs = await listMcpSweepRuns(userId, sweepId, offset, limit);
+        }
+      }
       return toolResult({
         sweep,
         offset,
         limit,
-        runs: await listMcpSweepRuns(userId, sweepId, offset, limit),
+        runs,
       });
     },
   );
@@ -345,13 +319,16 @@ function makeServer(userId: string): McpServer {
         limit: z.number().int().min(1).max(100).default(20),
       }),
     },
-    async ({ limit }) => toolResult(await listMcpSweeps(userId, limit)),
+    async ({ limit }) => {
+      await wakeMcpSweepJobs();
+      return toolResult(await listMcpSweeps(userId, limit));
+    },
   );
   server.registerTool(
     "save_sweep_result_as_signal",
     {
       description:
-        "Save selected sweep parameters as an active signal in a portfolio.",
+        "Save selected sweep parameters as an active signal in a portfolio. Sweep results must be selected within one hour of completion.",
       inputSchema: z.object({
         portfolioId: z.number().int().positive(),
         symbol: z.string().optional(),
@@ -700,7 +677,11 @@ function makeServer(userId: string): McpServer {
     async ({ portfolioId, page, pageSize }) => {
       if (!(await ownsPortfolio(portfolioId, userId)))
         throw new Error("Portfolio not found.");
-      const history = await listCashTransactionPage(portfolioId, page, pageSize);
+      const history = await listCashTransactionPage(
+        portfolioId,
+        page,
+        pageSize,
+      );
       const performance = await listPerformance(portfolioId);
       return toolResult({
         portfolioId,
