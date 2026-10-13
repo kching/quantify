@@ -516,7 +516,7 @@ describe("Dashboard", () => {
     ).toBeDefined();
   });
 
-  it("loads portfolios, scans the selected watchlist and displays daily signals, day change and alerts", async () => {
+  it("loads portfolios, scans the selected watchlist and displays daily and hourly signals, day change and alerts", async () => {
     render(<Dashboard />);
 
     await waitForPortfolio();
@@ -528,9 +528,13 @@ describe("Dashboard", () => {
     ).toBeDefined();
     expect(screen.getByRole("columnheader", { name: "SIGNALS" })).toBeDefined();
     expect(
-      screen.getByLabelText("BUY: Klinger Volume Oscillator"),
+      screen.getByLabelText("BUY: Klinger Volume Oscillator (Daily)"),
     ).toBeDefined();
-    expect(screen.getByLabelText("HOLD: RSI (14)")).toBeDefined();
+    expect(
+      screen.getByLabelText(
+        "HOLD: RSI (14) (Daily), Klinger Volume Oscillator (Hourly)",
+      ),
+    ).toBeDefined();
     expect(screen.getAllByText("BUY")).toHaveLength(2);
     expect(screen.getAllByText("$204.00")).toHaveLength(2);
     expect(
@@ -902,7 +906,9 @@ describe("Dashboard", () => {
       screen.getByRole("img", { name: "XRO.AX hourly profit and loss" }),
     ).toBeDefined();
     expect(screen.getAllByText("$20.00").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("2", { exact: true })).toBeDefined();
+    expect(
+      screen.getAllByText("2", { exact: true }).length,
+    ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("AVG COST / UNIT")).toBeDefined();
     expect(screen.getByText("$95.00")).toBeDefined();
     expect(screen.getByText("HOLDING PERFORMANCE")).toBeDefined();

@@ -83,7 +83,7 @@ async function refreshSymbolIfStale(
   const cached = await getCandles(symbol, interval);
   const now = Date.now();
   const freshness = interval === "1h" ? 60 * 60_000 : 24 * 60 * 60_000;
-  const cooldown = interval === "1h" ? 30 * 60_000 : 8 * 60 * 60_000;
+  const cooldown = interval === "1h" ? 20 * 60_000 : 8 * 60 * 60_000;
   if (
     cached.length &&
     (now - cached[cached.length - 1].timestamp < freshness ||
