@@ -1,6 +1,7 @@
 import {
   createWebhookConfig,
   deleteWebhookConfig,
+  getLatestWebhookDeliveryLog,
   listPortfolios,
   listWebhookConfigs,
   updateWebhookConfig,
@@ -71,7 +72,18 @@ export async function GET(): Promise<Response> {
       { error: "Sign in to view webhooks." },
       { status: 401 },
     );
-  return Response.json({ webhooks: await listWebhookConfigs(user.id) });
+  const webhooks = await listWebhookConfigs(user.id);
+  const items = await Promise.all(
+    webhooks.map(async (webhook) => {
+      const latest = await getLatestWebhookDeliveryLog(user.id, webhook.id);
+      return {
+        ...webhook,
+        status: latest?.status === "success" ? "healthy" : "error",
+        lastUpdated: latest?.timestamp ?? webhook.updatedAt,
+      };
+    }),
+  );
+  return Response.json({ webhooks: items });
 }
 
 export async function POST(request: Request): Promise<Response> {

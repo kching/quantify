@@ -1143,6 +1143,30 @@ export async function listWebhookDeliveryLogs(
     .all();
 }
 
+export async function getLatestWebhookDeliveryLog(
+  userId: string,
+  webhookConfigId: number,
+): Promise<WebhookDeliveryLog | null> {
+  await ensureDatabase();
+  return (
+    (await db
+      .select()
+      .from(webhookDeliveryLogs)
+      .where(
+        and(
+          eq(webhookDeliveryLogs.userId, userId),
+          eq(webhookDeliveryLogs.webhookConfigId, webhookConfigId),
+        ),
+      )
+      .orderBy(
+        desc(webhookDeliveryLogs.timestamp),
+        desc(webhookDeliveryLogs.id),
+      )
+      .limit(1)
+      .get()) ?? null
+  );
+}
+
 export interface TelegramConnection {
   userId: string;
   chatId: string;

@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  DialogContent,
+  DialogDescription,
+  DialogRoot,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 interface TokenRecord {
   id: number;
@@ -16,10 +25,12 @@ export default function McpPreferences(): React.JSX.Element {
   const [label, setLabel] = useState("");
   const [newToken, setNewToken] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
   const endpoint =
     typeof window === "undefined"
       ? "/api/mcp"
       : `${window.location.origin}/api/mcp`;
+
   async function refresh(): Promise<void> {
     const response = await fetch("/api/preferences/mcp-tokens", {
       cache: "no-store",
@@ -27,6 +38,7 @@ export default function McpPreferences(): React.JSX.Element {
     const body = (await response.json()) as { tokens?: TokenRecord[] };
     if (response.ok) setTokens(body.tokens ?? []);
   }
+
   useEffect(() => {
     let active = true;
     void fetch("/api/preferences/mcp-tokens", { cache: "no-store" })
@@ -41,9 +53,8 @@ export default function McpPreferences(): React.JSX.Element {
       active = false;
     };
   }, []);
-  async function createToken(
-    event: React.FormEvent<HTMLFormElement>,
-  ): Promise<void> {
+
+  async function createToken(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError("");
     setNewToken(null);
@@ -59,14 +70,19 @@ export default function McpPreferences(): React.JSX.Element {
     }
     setNewToken(body.token);
     setLabel("");
+    setDialogOpen(false);
     await refresh();
   }
+
   async function revoke(id: number): Promise<void> {
-    await fetch(`/api/preferences/mcp-tokens?id=${id}`, { method: "DELETE" });
-    await refresh();
+    const response = await fetch(`/api/preferences/mcp-tokens?id=${id}`, {
+      method: "DELETE",
+    });
+    if (response.ok) await refresh();
   }
+
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <header>
         <p className="text-sm uppercase tracking-wide">
           Preferences · Integrations
@@ -77,69 +93,156 @@ export default function McpPreferences(): React.JSX.Element {
           trades, and webhooks.
         </p>
       </header>
-      <section className="space-y-4 rounded-lg border p-5">
-        <h2 className="text-xl font-semibold">Personal access tokens</h2>
-        <p>
-          Tokens expire after one year. Each token is shown only once; store it
-          securely.
+
+      {newToken && (
+        <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <strong>Copy this token now. It will not be shown again.</strong>
+          <code className="block break-all">{newToken}</code>
+        </div>
+      )}
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
         </p>
-        <form
-          onSubmit={(event) => void createToken(event)}
-          className="flex gap-2"
-        >
-          <input
-            aria-label="Token label"
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
-            maxLength={100}
-            required
-            placeholder="e.g. Claude Desktop"
-            className="min-w-0 flex-1 rounded border px-3 py-2"
-          />
-          <button className="rounded bg-primary px-4 py-2 text-primary-foreground">
-            Create token
-          </button>
-        </form>
-        {error && <p role="alert">{error}</p>}
-        {newToken && (
-          <div className="space-y-2 rounded border p-3">
-            <strong>Copy this token now. It will not be shown again.</strong>
-            <code className="block break-all">{newToken}</code>
+      )}
+
+      <section className="space-y-3" aria-labelledby="mcp-tokens-heading">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 id="mcp-tokens-heading" className="text-xl font-semibold">
+              Personal access tokens
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Tokens expire after one year. Each token is shown once; store it
+              securely.
+            </p>
           </div>
-        )}
-        <p>
+          <Button
+            type="button"
+            onClick={() => {
+              setLabel("");
+              setError("");
+              setDialogOpen(true);
+            }}
+          >
+            Add token
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="border-b bg-muted/40 text-muted-foreground">
+              <tr>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Configuration
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Last used
+                </th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {tokens.map((token) => (
+                <tr key={token.id}>
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{token.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Expires {new Date(token.expiresAt).toLocaleDateString()}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${token.revokedAt ? "bg-muted text-muted-foreground" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"}`}
+                    >
+                      {token.revokedAt ? "Revoked" : "Active"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {token.lastUsedAt
+                      ? new Date(token.lastUsedAt).toLocaleString()
+                      : "Never"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {!token.revokedAt && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void revoke(token.id)}
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {tokens.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-8 text-center text-muted-foreground"
+                  >
+                    No access tokens configured.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-sm text-muted-foreground">
           MCP endpoint: <code>{endpoint}</code>
         </p>
-        <ul className="space-y-3">
-          {tokens.map((token) => (
-            <li
-              key={token.id}
-              className="flex items-center justify-between gap-3 border-t pt-3"
-            >
-              <span>
-                <strong>{token.label}</strong>
-                <small className="block">
-                  {token.revokedAt
-                    ? "Revoked"
-                    : `Expires ${new Date(token.expiresAt).toLocaleDateString()}`}{" "}
-                  ·{" "}
-                  {token.lastUsedAt
-                    ? `Last used ${new Date(token.lastUsedAt).toLocaleString()}`
-                    : "Never used"}
-                </small>
-              </span>
-              {!token.revokedAt && (
-                <button
-                  onClick={() => void revoke(token.id)}
-                  className="rounded border px-3 py-1"
-                >
-                  Revoke
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
       </section>
+
+      <DialogRoot open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <div className="mb-5 space-y-2">
+            <DialogTitle className="text-xl font-semibold">
+              Add access token
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Create a personal token for an MCP client. Tokens expire after one
+              year and are shown only once.
+            </DialogDescription>
+          </div>
+          <form
+            onSubmit={(event) => void createToken(event)}
+            className="space-y-4"
+          >
+            <label className="block space-y-1 text-sm">
+              Token label
+              <Input
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                maxLength={100}
+                required
+                placeholder="e.g. Claude Desktop"
+              />
+            </label>
+            {error && (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">Create token</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </DialogRoot>
     </div>
   );
 }

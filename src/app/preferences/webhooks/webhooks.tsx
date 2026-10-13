@@ -3,15 +3,20 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  DialogContent,
+  DialogDescription,
+  DialogRoot,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { Portfolio, WebhookConfig } from "@/core/types";
+
+interface WebhookListItem extends WebhookConfig {
+  status: "healthy" | "error";
+  lastUpdated: number;
+}
 
 interface WebhookForm {
   label: string;
@@ -42,16 +47,23 @@ export default function WebhooksPreferences({
   initialWebhooks,
   portfolios,
 }: {
-  initialWebhooks: WebhookConfig[];
+  initialWebhooks: WebhookListItem[];
   portfolios: Array<Pick<Portfolio, "id" | "name">>;
 }): React.JSX.Element {
-  const [webhooks, setWebhooks] = useState<WebhookConfig[]>(initialWebhooks);
+  const [webhooks, setWebhooks] = useState<WebhookListItem[]>(initialWebhooks);
   const [form, setForm] = useState<WebhookForm>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
-  const [loaded, setLoaded] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const pageCount = Math.max(1, Math.ceil(webhooks.length / pageSize));
+  const visibleWebhooks = webhooks.slice(
+    (page - 1) * pageSize,
+    page * pageSize,
+  );
 
   async function loadWebhooks(): Promise<void> {
     try {
@@ -59,16 +71,21 @@ export default function WebhooksPreferences({
       const body = await readResponse(response);
       if (!response.ok)
         throw new Error(String(body.error ?? "Unable to load webhooks."));
-      setWebhooks(
-        Array.isArray(body.webhooks) ? (body.webhooks as WebhookConfig[]) : [],
+      const nextWebhooks = Array.isArray(body.webhooks)
+        ? (body.webhooks as WebhookListItem[])
+        : [];
+      setWebhooks(nextWebhooks);
+      setPage((current) =>
+        Math.min(
+          current,
+          Math.max(1, Math.ceil(nextWebhooks.length / pageSize)),
+        ),
       );
     } catch (reason) {
       setError(true);
       setMessage(
         reason instanceof Error ? reason.message : "Unable to load webhooks.",
       );
-    } finally {
-      setLoaded(true);
     }
   }
 
@@ -82,11 +99,20 @@ export default function WebhooksPreferences({
       excludedPortfolioIds: webhook.excludedPortfolioIds ?? [],
     });
     setMessage("");
+    setDialogOpen(true);
+  }
+
+  function startAdd(): void {
+    resetForm();
+    setMessage("");
+    setError(false);
+    setDialogOpen(true);
   }
 
   function resetForm(): void {
     setEditingId(null);
     setForm(emptyForm);
+    setDialogOpen(false);
   }
 
   async function saveWebhook(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -106,6 +132,7 @@ export default function WebhooksPreferences({
         throw new Error(String(body.error ?? "Unable to save webhook."));
       resetForm();
       await loadWebhooks();
+      setPage(1);
       if (creating) {
         const initialSync = body.initialSync;
         if (
@@ -175,18 +202,174 @@ export default function WebhooksPreferences({
           Send candle and signal updates to your downstream systems.
         </p>
       </header>
+      {message && !dialogOpen && (
+        <p
+          className={`text-sm ${error ? "text-destructive" : "text-muted-foreground"}`}
+          role="status"
+        >
+          {message}
+        </p>
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {editingId === null ? "Add a webhook" : "Edit webhook"}
-          </CardTitle>
-          <CardDescription>
-            Configure an HTTP endpoint. Successful responses must use a 2xx
-            status.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <section
+        className="space-y-3"
+        aria-labelledby="configured-webhooks-heading"
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2
+              id="configured-webhooks-heading"
+              className="text-xl font-semibold"
+            >
+              Configured webhooks
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {webhooks.length} configured endpoint
+              {webhooks.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <Button type="button" onClick={startAdd}>
+            Add webhook
+          </Button>
+        </div>
+        {webhooks.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No webhooks configured yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="border-b bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Webhook
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Last updated
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {visibleWebhooks.map((webhook) => (
+                  <tr key={webhook.id}>
+                    <td className="max-w-0 px-4 py-3">
+                      <p className="truncate font-medium">{webhook.label}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {webhook.url}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${webhook.status === "healthy" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "bg-destructive/10 text-destructive"}`}
+                      >
+                        {webhook.status === "healthy" ? "Healthy" : "Error"}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                      {webhook.lastUpdated
+                        ? new Intl.DateTimeFormat(undefined, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          }).format(webhook.lastUpdated)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => startEdit(webhook)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          disabled={busy}
+                          onClick={() => void removeWebhook(webhook.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {webhooks.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <label className="flex items-center gap-2 text-muted-foreground">
+              Rows per page
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-foreground"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setPage(1);
+                }}
+              >
+                {[10, 20, 50].map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-center gap-3">
+              <span className="text-muted-foreground">
+                Page {page} of {pageCount}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage((current) => current - 1)}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={page >= pageCount}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <DialogRoot
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <CardHeader className="px-0 pt-0">
+            <DialogTitle className="text-xl font-semibold">
+              {editingId === null ? "Add a webhook" : "Edit webhook"}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Configure an HTTP endpoint. Successful responses must use a 2xx
+              status.
+            </DialogDescription>
+          </CardHeader>
           <form
             className="space-y-4"
             onSubmit={(event) => void saveWebhook(event)}
@@ -286,11 +469,13 @@ export default function WebhooksPreferences({
                     ? "Add webhook"
                     : "Save changes"}
               </Button>
-              {editingId !== null && (
-                <Button type="button" variant="outline" onClick={resetForm}>
-                  Cancel
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => resetForm()}
+              >
+                Cancel
+              </Button>
             </div>
           </form>
           {message && (
@@ -301,70 +486,8 @@ export default function WebhooksPreferences({
               {message}
             </p>
           )}
-        </CardContent>
-      </Card>
-
-      <section
-        className="space-y-3"
-        aria-labelledby="configured-webhooks-heading"
-      >
-        <h2 id="configured-webhooks-heading" className="text-xl font-semibold">
-          Configured webhooks
-        </h2>
-        {loaded && webhooks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No webhooks configured yet.
-          </p>
-        ) : (
-          webhooks.map((webhook) => (
-            <Card key={webhook.id}>
-              <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-                <div className="min-w-0">
-                  <h3 className="font-medium">{webhook.label}</h3>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {webhook.url}
-                  </p>
-                  {webhook.clientId && (
-                    <p className="text-xs text-muted-foreground">
-                      Client ID: {webhook.clientId}
-                    </p>
-                  )}
-                  {webhook.secretToken && (
-                    <p className="text-xs text-muted-foreground">
-                      Secret token configured
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    {webhook.excludedPortfolioIds?.length
-                      ? `Excludes: ${webhook.excludedPortfolioIds.map((id) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? `Portfolio ${id}`).join(", ")}`
-                      : "Receives events from all portfolios"}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => startEdit(webhook)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="destructive"
-                    disabled={busy}
-                    onClick={() => void removeWebhook(webhook.id)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </section>
+        </DialogContent>
+      </DialogRoot>
     </div>
   );
 }
