@@ -9,6 +9,7 @@ const databaseDirectory = mkdtempSync(join(tmpdir(), "quantify-performance-"));
 process.env.QUANTIFY_DB_PATH = join(databaseDirectory, "test.sqlite");
 
 const database = await import("./db");
+const webhookAdapter = await import("./adapters/webhook.adapter");
 const { capturePortfolioPerformance } = await import("./performance.service");
 const HOUR = 60 * 60 * 1000;
 const now = Date.now();
@@ -33,6 +34,159 @@ afterAll(async () => {
 });
 
 describe("trade and performance persistence", () => {
+  it("persists multiple webhook configs independently for each user", async () => {
+    await database.ensureUserProfile({ id: "webhook-user-a", name: "User A" });
+    await database.ensureUserProfile({ id: "webhook-user-b", name: "User B" });
+
+    const first = await database.createWebhookConfig("webhook-user-a", {
+      label: "Primary alerts",
+      url: "https://example.com/first",
+    });
+    const second = await database.createWebhookConfig("webhook-user-a", {
+      url: "https://example.com/second",
+      clientId: "client-a",
+      secretToken: "secret-a",
+    });
+    await database.createWebhookConfig("webhook-user-b", {
+      url: "https://other.example.com/hook",
+      clientId: "client-b",
+    });
+
+    expect(Number.isSafeInteger(first.id)).toBe(true);
+    expect(first).toMatchObject({
+      userId: "webhook-user-a",
+      label: "Primary alerts",
+      url: "https://example.com/first",
+      clientId: null,
+      secretToken: null,
+    });
+    expect(await database.listWebhookConfigs("webhook-user-a")).toEqual([
+      first,
+      second,
+    ]);
+    expect(await database.listWebhookConfigs("webhook-user-b")).toMatchObject([
+      { url: "https://other.example.com/hook", clientId: "client-b" },
+    ]);
+
+    expect(
+      await database.updateWebhookConfig("webhook-user-b", first.id, {
+        url: "https://attacker.example.com/hook",
+      }),
+    ).toBeNull();
+    const updated = await database.updateWebhookConfig("webhook-user-a", first.id, {
+      label: "Updated alerts",
+      url: "https://example.com/updated",
+      secretToken: "secret-updated",
+    });
+    expect(updated).toMatchObject({
+      label: "Updated alerts",
+      url: "https://example.com/updated",
+      clientId: null,
+      secretToken: "secret-updated",
+    });
+    expect(await database.deleteWebhookConfig("webhook-user-b", second.id)).toBe(
+      false,
+    );
+    expect(await database.deleteWebhookConfig("webhook-user-a", first.id)).toBe(
+      true,
+    );
+    expect(await database.listWebhookConfigs("webhook-user-a")).toEqual([
+      second,
+    ]);
+  });
+
+  it("keeps webhook delivery logs self-contained with timestamp, URL and optional message", async () => {
+    await database.ensureUserProfile({
+      id: "webhook-log-user",
+      name: "Webhook Log User",
+    });
+    const config = await database.createWebhookConfig("webhook-log-user", {
+      url: "https://example.com/events",
+    });
+    const log = await database.recordWebhookDeliveryLog({
+      userId: "webhook-log-user",
+      webhookConfigId: config.id,
+      eventType: "signal.changed",
+      url: config.url,
+      status: "success",
+      statusCode: 202,
+    });
+
+    expect(Number.isSafeInteger(log.timestamp)).toBe(true);
+    expect(log).toMatchObject({
+      userId: "webhook-log-user",
+      webhookConfigId: config.id,
+      eventType: "signal.changed",
+      url: "https://example.com/events",
+      status: "success",
+      statusCode: 202,
+      message: null,
+    });
+    expect(
+      (await database.db.$client.execute(
+        "PRAGMA foreign_key_list(webhook_delivery_logs)",
+      )).rows,
+    ).toHaveLength(0);
+    expect(
+      await database.deleteWebhookConfig("webhook-log-user", config.id),
+    ).toBe(true);
+    expect(await database.listWebhookDeliveryLogs("webhook-log-user")).toEqual([
+      log,
+    ]);
+    expect(await database.listWebhookDeliveryLogs("other-webhook-user")).toEqual(
+      [],
+    );
+  });
+
+  it("posts typed webhook events, follows redirects and logs only 2xx as success", async () => {
+    await database.ensureUserProfile({
+      id: "webhook-adapter-user",
+      name: "Webhook Adapter User",
+    });
+    const config = await database.createWebhookConfig("webhook-adapter-user", {
+      url: "https://example.com/events",
+      clientId: "client-id",
+      secretToken: "secret-token",
+    });
+    const originalFetch = globalThis.fetch;
+    let responseStatus = 204;
+    const fetchMock = mock(
+      async (): Promise<Response> =>
+        new Response(null, { status: responseStatus }),
+    );
+    globalThis.fetch = fetchMock;
+    try {
+      const payload = {
+        type: "signal",
+        data: { symbol: "ABC", signal: "BUY" },
+      };
+      const delivered = await webhookAdapter.invokeWebhook(config, payload);
+      expect(delivered.delivered).toBe(true);
+      expect(delivered.log).toMatchObject({
+        url: config.url,
+        eventType: "signal",
+        status: "success",
+        statusCode: 204,
+      });
+      const requestInit = fetchMock.mock.calls[0]?.[1];
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(config.url);
+      expect(requestInit).toMatchObject({ method: "POST", redirect: "follow" });
+      expect(requestInit?.headers).toMatchObject({
+        "Content-Type": "application/json",
+        "X-Client-ID": "client-id",
+        Authorization: "Bearer secret-token",
+      });
+      expect(JSON.parse(String(requestInit?.body))).toEqual(payload);
+
+      responseStatus = 503;
+      const rejected = await webhookAdapter.invokeWebhook(config, payload);
+      expect(rejected.delivered).toBe(false);
+      expect(rejected.log).toMatchObject({ status: "error", statusCode: 503 });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("persists holding strategies independently for the same ticker in different portfolios", async () => {
     const firstPortfolio = await database.createPortfolio("Klinger watchlist");
     const secondPortfolio = await database.createPortfolio("RSI watchlist");

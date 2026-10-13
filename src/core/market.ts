@@ -5,6 +5,7 @@ import {
   getCandles,
   getTelegramConnection,
   listHoldingStrategies,
+  listWebhookConfigs,
   listPortfolioTradeSymbols,
   listPortfolios,
   listAllPortfolios,
@@ -15,6 +16,7 @@ import {
 } from "./db";
 import { capturePortfolioPerformance } from "./performance.service";
 import { sendTelegramSignalNotification } from "./adapters/telegram.adapter";
+import { invokeWebhook } from "./adapters/webhook.adapter";
 import { fetchYahooCandles } from "./providers/yahoo.provider";
 import type {
   Candle,
@@ -26,7 +28,82 @@ import type {
 } from "./types";
 
 const lastChecked = new Map<string, number>();
-const pendingRefreshes = new Map<string, Promise<Candle[]>>();
+const pendingRefreshes = new Map<string, Promise<CandleRefresh>>();
+
+interface CandleRefresh {
+  candles: Candle[];
+  updatedCandles: Candle[];
+}
+
+function changedCandles(
+  previousCandles: readonly Candle[],
+  nextCandles: readonly Candle[],
+): Candle[] {
+  if (!previousCandles.length) return nextCandles.slice(-1);
+  const latestPreviousTimestamp = Math.max(
+    ...previousCandles.map((candle) => candle.timestamp),
+  );
+  const previousByTimestamp = new Map(
+    previousCandles.map((candle) => [candle.timestamp, candle]),
+  );
+  return nextCandles.filter((candle) => {
+    const previous = previousByTimestamp.get(candle.timestamp);
+    if (!previous) return candle.timestamp > latestPreviousTimestamp;
+    return (
+      previous.open !== candle.open ||
+      previous.high !== candle.high ||
+      previous.low !== candle.low ||
+      previous.close !== candle.close ||
+      previous.volume !== candle.volume
+    );
+  });
+}
+
+async function notifyWebhookConfigs<TData>(
+  userId: string,
+  type: "candle" | "signal",
+  data: TData,
+  warnings: string[],
+): Promise<void> {
+  let configs: Awaited<ReturnType<typeof listWebhookConfigs>>;
+  try {
+    configs = await listWebhookConfigs(userId);
+  } catch (error: unknown) {
+    warnings.push(
+      `Webhook settings for user ${userId}: ${error instanceof Error ? error.message : "could not be loaded"}`,
+    );
+    return;
+  }
+  await Promise.all(
+    configs.map(async (config) => {
+      try {
+        const result = await invokeWebhook(config, { type, data });
+        if (!result.delivered)
+          warnings.push(
+            `${config.url} webhook ${type}: ${result.log.message ?? "delivery failed"}`,
+          );
+      } catch (error: unknown) {
+        warnings.push(
+          `${config.url} webhook ${type}: ${error instanceof Error ? error.message : "delivery failed"}`,
+        );
+      }
+    }),
+  );
+}
+
+async function notifyCandleUpdates(
+  userId: string,
+  updatedCandles: readonly Candle[],
+  warnings: string[],
+  emitted?: Set<string>,
+): Promise<void> {
+  for (const candle of updatedCandles) {
+    const key = `${userId}:${candle.symbol}:${candle.interval}:${candle.timestamp}`;
+    if (emitted?.has(key)) continue;
+    emitted?.add(key);
+    await notifyWebhookConfigs(userId, "candle", candle, warnings);
+  }
+}
 
 async function recordSignalAndNotify(
   portfolioId: number,
@@ -40,6 +117,8 @@ async function recordSignalAndNotify(
     signal.signal,
     userId,
   );
+  if (state.changed)
+    await notifyWebhookConfigs(userId, "signal", signal, warnings);
   if (state.changed && state.previousSignal) {
     try {
       const connection = await getTelegramConnection(userId);
@@ -62,7 +141,7 @@ async function recordSignalAndNotify(
 async function refreshSymbol(
   symbol: string,
   interval: CandleInterval,
-): Promise<Candle[]> {
+): Promise<CandleRefresh> {
   const key = `${symbol}:${interval}`;
   const pending = pendingRefreshes.get(key);
   if (pending) return pending;
@@ -79,7 +158,7 @@ async function refreshSymbolIfStale(
   symbol: string,
   interval: CandleInterval,
   key: string,
-): Promise<Candle[]> {
+): Promise<CandleRefresh> {
   const cached = await getCandles(symbol, interval);
   const now = Date.now();
   const freshness = interval === "1h" ? 60 * 60_000 : 24 * 60 * 60_000;
@@ -89,7 +168,7 @@ async function refreshSymbolIfStale(
     (now - cached[cached.length - 1].timestamp < freshness ||
       now - (lastChecked.get(key) ?? 0) < cooldown)
   )
-    return cached;
+    return { candles: cached, updatedCandles: [] };
   const days =
     interval === "1d"
       ? cached.length
@@ -105,27 +184,30 @@ async function refreshSymbolIfStale(
       (interval === "1d"
         ? DAILY_CANDLE_RETENTION_MS
         : TIME_SERIES_RETENTION_MS);
-    await saveCandles(
-      interval,
-      fresh.filter((candle) => candle.timestamp >= cutoff),
-    );
+    const retained = fresh.filter((candle) => candle.timestamp >= cutoff);
+    const updatedCandles = changedCandles(cached, retained);
+    await saveCandles(interval, retained);
+    return { candles: await getCandles(symbol, interval), updatedCandles };
   } finally {
     lastChecked.set(key, now);
   }
-  return getCandles(symbol, interval);
 }
 
 export async function refreshPortfolioSymbol(
   portfolioId: number,
   symbol: string,
+  userId = "admin",
 ): Promise<void> {
+  const cached = await getCandles(symbol, "1h");
   const now = Date.now();
   const fresh = await fetchYahooCandles(symbol, "1h", 10);
   const cutoff = now - TIME_SERIES_RETENTION_MS;
-  await saveCandles(
-    "1h",
-    fresh.filter((candle) => candle.timestamp >= cutoff),
-  );
+  const retained = fresh.filter((candle) => candle.timestamp >= cutoff);
+  const updates = changedCandles(cached, retained);
+  await saveCandles("1h", retained);
+  const warnings: string[] = [];
+  await notifyCandleUpdates(userId, updates, warnings);
+  for (const warning of warnings) console.warn(`[quantify] ${warning}`);
   await capturePortfolioPerformance(portfolioId);
 }
 
@@ -135,25 +217,38 @@ export async function updateAllPortfolioDailyCandles(): Promise<{
 }> {
   const portfolios = await listAllPortfolios();
   const symbols = new Set<string>();
+  const usersBySymbol = new Map<string, Set<string>>();
   for (const portfolio of portfolios) {
-    portfolio.holdings.forEach(({ symbol }) => symbols.add(symbol));
-    (await listPortfolioTradeSymbols(portfolio.id)).forEach((symbol) =>
-      symbols.add(symbol),
-    );
+    const portfolioSymbols = new Set([
+      ...portfolio.holdings.map(({ symbol }) => symbol),
+      ...(await listPortfolioTradeSymbols(portfolio.id)),
+    ]);
+    for (const symbol of portfolioSymbols) {
+      symbols.add(symbol);
+      const users = usersBySymbol.get(symbol) ?? new Set<string>();
+      users.add(portfolio.userId);
+      usersBySymbol.set(symbol, users);
+    }
   }
   const warnings: string[] = [];
+  const emittedCandleEvents = new Set<string>();
   const cutoff = Date.now() - DAILY_CANDLE_RETENTION_MS;
   await Promise.all(
     [...symbols].map(async (symbol) => {
       try {
+        const cached = await getCandles(symbol, "1d");
         const fresh = await fetchYahooCandles(
           symbol,
           "1d",
           DAILY_CANDLE_HISTORY_DAYS,
         );
-        await saveCandles(
-          "1d",
-          fresh.filter((candle) => candle.timestamp >= cutoff),
+        const retained = fresh.filter((candle) => candle.timestamp >= cutoff);
+        const updates = changedCandles(cached, retained);
+        await saveCandles("1d", retained);
+        await Promise.all(
+          [...(usersBySymbol.get(symbol) ?? [])].map((userId) =>
+            notifyCandleUpdates(userId, updates, warnings, emittedCandleEvents),
+          ),
         );
       } catch (error: unknown) {
         warnings.push(
@@ -210,6 +305,7 @@ export async function updateAllPortfolioDailyCandles(): Promise<{
 interface SymbolScan {
   daily: SignalResult[];
   hourly: SignalResult[];
+  candleUpdates: Candle[];
   hourlyCandles: Candle[];
   dailyCandles: Candle[];
 }
@@ -270,21 +366,29 @@ async function scanSymbol(
         warnings.push(
           `${symbol} daily data: ${error instanceof Error ? error.message : "refresh failed"}`,
         );
-        return getCandles(symbol, "1d");
+        return { candles: await getCandles(symbol, "1d"), updatedCandles: [] };
       })
-    : getCandles(symbol, "1d");
+    : getCandles(symbol, "1d").then((candles) => ({
+        candles,
+        updatedCandles: [],
+      }));
   const hourlyPromise = intervals.includes("1h")
     ? refreshSymbol(symbol, "1h").catch(async (error: unknown) => {
         warnings.push(
           `${symbol} hourly data: ${error instanceof Error ? error.message : "refresh failed"}`,
         );
-        return getCandles(symbol, "1h");
+        return { candles: await getCandles(symbol, "1h"), updatedCandles: [] };
       })
-    : getCandles(symbol, "1h");
-  const [dailyCandles, hourlyCandles] = await Promise.all([
+    : getCandles(symbol, "1h").then((candles) => ({
+        candles,
+        updatedCandles: [],
+      }));
+  const [dailyRefresh, hourlyRefresh] = await Promise.all([
     dailyPromise,
     hourlyPromise,
   ]);
+  const dailyCandles = dailyRefresh.candles;
+  const hourlyCandles = hourlyRefresh.candles;
   const selected = holdingStrategies.length
     ? await configuredStrategies(symbol, holdingStrategies, warnings)
     : [];
@@ -317,6 +421,10 @@ async function scanSymbol(
   return {
     daily,
     hourly,
+    candleUpdates: [
+      ...dailyRefresh.updatedCandles,
+      ...hourlyRefresh.updatedCandles,
+    ],
     dailyCandles: dailyCandles.slice(-90),
     hourlyCandles: hourlyCandles.slice(-48),
   };
@@ -326,7 +434,7 @@ export async function scanPortfolio(
   portfolioId: number,
   userId = "admin",
 ): Promise<{
-  signals: Array<SymbolScan & { symbol: string }>;
+  signals: Array<Omit<SymbolScan, "candleUpdates"> & { symbol: string }>;
   warnings: string[];
 }> {
   const portfolio = (await listPortfolios(userId)).find(
@@ -340,12 +448,19 @@ export async function scanPortfolio(
     ...portfolio.holdings.map(({ symbol }) => symbol),
     ...tradedSymbols,
   ]);
+  const emittedCandleEvents = new Set<string>();
   const signals = await Promise.all(
     [...symbols].map(async (symbol) => {
       const configured = holdingStrategies.filter(
         (holdingStrategy) => holdingStrategy.symbol === symbol,
       );
       const result = await scanSymbol(symbol, warnings, configured);
+      await notifyCandleUpdates(
+        userId,
+        result.candleUpdates,
+        warnings,
+        emittedCandleEvents,
+      );
       const daily = await Promise.all(
         result.daily.map((signal) =>
           recordSignalAndNotify(portfolioId, signal, userId, warnings),
@@ -356,7 +471,12 @@ export async function scanPortfolio(
           recordSignalAndNotify(portfolioId, signal, userId, warnings),
         ),
       );
-      const statefulResult = { ...result, daily, hourly };
+      const statefulResult = {
+        daily,
+        hourly,
+        dailyCandles: result.dailyCandles,
+        hourlyCandles: result.hourlyCandles,
+      };
       for (const signal of daily)
         if (signal.signal !== "HOLD" && signal.price > 0)
           await recordAlert(portfolioId, signal, userId);
@@ -403,6 +523,7 @@ export async function updateAllPortfolioMarkets(): Promise<{
     }
   }
   const warnings: string[] = [];
+  const emittedCandleEvents = new Set<string>();
   await Promise.all(
     [...ownersBySymbol].map(async ([symbol, owners]) => {
       await Promise.all(
@@ -412,6 +533,12 @@ export async function updateAllPortfolioMarkets(): Promise<{
             warnings,
             owner.holdingStrategies.filter((item) => item.candleType === "1h"),
             ["1h"],
+          );
+          await notifyCandleUpdates(
+            owner.userId,
+            result.candleUpdates,
+            warnings,
+            emittedCandleEvents,
           );
           const hourly = await Promise.all(
             result.hourly.map((signal) =>

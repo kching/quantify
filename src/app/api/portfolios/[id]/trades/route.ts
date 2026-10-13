@@ -90,7 +90,7 @@ export async function POST(
     const trade = await recordTrade(input, user.id);
     try {
       const { refreshPortfolioSymbol } = await import("@/core/market");
-      await refreshPortfolioSymbol(portfolioId, symbol);
+      await refreshPortfolioSymbol(portfolioId, symbol, user.id);
     } catch (refreshError) {
       console.warn(
         `[quantify] Immediate ${symbol} refresh failed after recording trade.`,

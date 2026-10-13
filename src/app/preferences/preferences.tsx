@@ -194,6 +194,9 @@ export default function Preferences({
         </SidebarHeader>
         <SidebarContent>
           <div className="preferences-sidebar-heading">PREFERENCES</div>
+          <Link className="nav-item" href="/preferences/webhooks">
+            <span className="sidebar-menu-label">Webhooks</span>
+          </Link>
           <SidebarGroup>
             <SidebarMenu aria-label="Preference pages">
               <SidebarMenuItem>

@@ -78,6 +78,50 @@ export interface UserProfile {
   updatedAt: number;
 }
 
+export interface WebhookConfig {
+  id: number;
+  userId: string;
+  label: string;
+  url: string;
+  clientId: string | null;
+  secretToken: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WebhookConfigInput {
+  label?: string;
+  url: string;
+  clientId?: string | null;
+  secretToken?: string | null;
+}
+
+export type WebhookDeliveryStatus = "success" | "error";
+
+export interface WebhookDeliveryLog {
+  id: number;
+  /** User ID snapshot for UI ownership filtering; intentionally has no FK. */
+  userId: string;
+  webhookConfigId: number | null;
+  eventType: string;
+  url: string;
+  status: WebhookDeliveryStatus;
+  statusCode: number | null;
+  message: string | null;
+  timestamp: number;
+}
+
+export interface WebhookDeliveryLogInput {
+  /** User ID snapshot for UI ownership filtering; intentionally has no FK. */
+  userId: string;
+  webhookConfigId: number | null;
+  eventType: string;
+  url: string;
+  status: WebhookDeliveryStatus;
+  statusCode: number | null;
+  message?: string | null;
+}
+
 export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type UserPreferences = Record<string, JsonValue>;

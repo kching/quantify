@@ -29,6 +29,10 @@ import type {
   StrategyParams,
   UserPreferences,
   UserProfile,
+  WebhookConfig,
+  WebhookConfigInput,
+  WebhookDeliveryLog,
+  WebhookDeliveryLogInput,
 } from "./types";
 
 const users = sqliteTable(
@@ -76,6 +80,46 @@ const telegramLinkTokens = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [index("telegram_link_tokens_user_id").on(table.userId)],
+);
+const webhookConfigs = sqliteTable(
+  "webhook_configs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    label: text("label").notNull().default("Webhook"),
+    url: text("url").notNull(),
+    clientId: text("client_id"),
+    secretToken: text("secret_token"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [index("webhook_configs_user_id").on(table.userId)],
+);
+const webhookDeliveryLogs = sqliteTable(
+  "webhook_delivery_logs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    webhookConfigId: integer("webhook_config_id"),
+    eventType: text("event_type").notNull(),
+    status: text("status", { enum: ["success", "error"] }).notNull(),
+    url: text("url").notNull(),
+    statusCode: integer("status_code"),
+    message: text("message"),
+    timestamp: integer("timestamp").notNull(),
+  },
+  (table) => [
+    index("webhook_delivery_logs_user_created").on(
+      table.userId,
+      table.timestamp,
+    ),
+    index("webhook_delivery_logs_config_created").on(
+      table.webhookConfigId,
+      table.timestamp,
+    ),
+  ],
 );
 const portfolios = sqliteTable(
   "portfolios",
@@ -274,6 +318,8 @@ export const db = drizzle({
     userPreferences,
     telegramConnections,
     telegramLinkTokens,
+    webhookConfigs,
+    webhookDeliveryLogs,
     portfolios,
     holdings,
     holdingStrategies,
@@ -296,6 +342,9 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS telegram_connections (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, chat_id TEXT NOT NULL UNIQUE, connected_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS telegram_link_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS telegram_link_tokens_user_id ON telegram_link_tokens(user_id);
+    CREATE TABLE IF NOT EXISTS webhook_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL DEFAULT 'Webhook', url TEXT NOT NULL, client_id TEXT, secret_token TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS webhook_configs_user_id ON webhook_configs(user_id);
+    CREATE TABLE IF NOT EXISTS webhook_delivery_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, webhook_config_id INTEGER, event_type TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL, status_code INTEGER, message TEXT, timestamp INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
     CREATE TABLE IF NOT EXISTS holding_strategies (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, symbol TEXT NOT NULL, label TEXT NOT NULL, name TEXT NOT NULL, params TEXT NOT NULL, candle_type TEXT NOT NULL DEFAULT '1d', last_signal TEXT, signal_updated_at INTEGER, FOREIGN KEY(portfolio_id, symbol) REFERENCES holdings(portfolio_id, symbol) ON DELETE CASCADE);
@@ -307,6 +356,53 @@ async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS cash_transactions_portfolio_time ON cash_transactions(portfolio_id, timestamp);
     CREATE TABLE IF NOT EXISTS holding_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, timestamp INTEGER NOT NULL, quantity REAL NOT NULL, market_price REAL NOT NULL, average_unit_price REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, symbol, timestamp));
     CREATE TABLE IF NOT EXISTS portfolio_performance (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, timestamp INTEGER NOT NULL, cash_balance REAL NOT NULL DEFAULT 0, market_value REAL NOT NULL, total_value REAL NOT NULL DEFAULT 0, contributed_capital REAL NOT NULL DEFAULT 0, profit_loss REAL NOT NULL, PRIMARY KEY(portfolio_id, timestamp));
+  `);
+  const webhookConfigColumns = await client.execute(
+    "PRAGMA table_info(webhook_configs)",
+  );
+  if (
+    !webhookConfigColumns.rows.some((row) => String(row.name) === "label")
+  ) {
+    await client.execute(
+      "ALTER TABLE webhook_configs ADD COLUMN label TEXT NOT NULL DEFAULT 'Webhook'",
+    );
+  }
+  const webhookLogColumns = await client.execute(
+    "PRAGMA table_info(webhook_delivery_logs)",
+  );
+  const webhookLogColumnNames = new Set(
+    webhookLogColumns.rows.map((row) => String(row.name)),
+  );
+  const webhookLogForeignKeys = await client.execute(
+    "PRAGMA foreign_key_list(webhook_delivery_logs)",
+  );
+  const webhookLogMessageColumn = webhookLogColumns.rows.find(
+    (row) => String(row.name) === "message",
+  );
+  if (
+    !webhookLogColumnNames.has("url") ||
+    !webhookLogColumnNames.has("timestamp") ||
+    webhookLogForeignKeys.rows.length > 0 ||
+    Number(webhookLogMessageColumn?.notnull ?? 0) !== 0
+  ) {
+    await client.execute(
+      "ALTER TABLE webhook_delivery_logs RENAME TO webhook_delivery_logs_legacy",
+    );
+    await client.execute(
+      "CREATE TABLE webhook_delivery_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, webhook_config_id INTEGER, event_type TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL, status_code INTEGER, message TEXT, timestamp INTEGER NOT NULL)",
+    );
+    await client.execute(
+      `INSERT INTO webhook_delivery_logs (id, user_id, webhook_config_id, event_type, url, status, status_code, message, timestamp)
+       SELECT legacy.id, legacy.user_id, legacy.webhook_config_id, legacy.event_type,
+         COALESCE((SELECT url FROM webhook_configs WHERE id = legacy.webhook_config_id), ''),
+         legacy.status, legacy.status_code, legacy.message, legacy.created_at
+       FROM webhook_delivery_logs_legacy AS legacy`,
+    );
+    await client.execute("DROP TABLE webhook_delivery_logs_legacy");
+  }
+  await client.executeMultiple(`
+    CREATE INDEX IF NOT EXISTS webhook_delivery_logs_user_created ON webhook_delivery_logs(user_id, timestamp);
+    CREATE INDEX IF NOT EXISTS webhook_delivery_logs_config_created ON webhook_delivery_logs(webhook_config_id, timestamp);
   `);
   await client.execute("DELETE FROM holding_strategies WHERE name = 'rsi-14'");
   await client.execute("DELETE FROM alerts WHERE strategy_id = 'rsi-14'");
@@ -556,6 +652,104 @@ export async function updateUserPreferences(
     })
     .run();
   return preferences;
+}
+
+export async function listWebhookConfigs(
+  userId: string,
+): Promise<WebhookConfig[]> {
+  await ensureDatabase();
+  return db
+    .select()
+    .from(webhookConfigs)
+    .where(eq(webhookConfigs.userId, userId))
+    .orderBy(webhookConfigs.id)
+    .all();
+}
+
+export async function createWebhookConfig(
+  userId: string,
+  input: WebhookConfigInput,
+): Promise<WebhookConfig> {
+  await ensureDatabase();
+  const now = Date.now();
+  const row = await db
+    .insert(webhookConfigs)
+    .values({
+      userId,
+      url: input.url,
+      label: input.label ?? "Webhook",
+      clientId: input.clientId ?? null,
+      secretToken: input.secretToken ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning()
+    .get();
+  return row;
+}
+
+export async function updateWebhookConfig(
+  userId: string,
+  webhookId: number,
+  input: WebhookConfigInput,
+): Promise<WebhookConfig | null> {
+  await ensureDatabase();
+  const row = await db
+    .update(webhookConfigs)
+    .set({
+      label: input.label ?? "Webhook",
+      url: input.url,
+      clientId: input.clientId ?? null,
+      secretToken: input.secretToken ?? null,
+      updatedAt: Date.now(),
+    })
+    .where(
+      and(eq(webhookConfigs.id, webhookId), eq(webhookConfigs.userId, userId)),
+    )
+    .returning()
+    .get();
+  return row ?? null;
+}
+
+export async function deleteWebhookConfig(
+  userId: string,
+  webhookId: number,
+): Promise<boolean> {
+  await ensureDatabase();
+  const row = await db
+    .delete(webhookConfigs)
+    .where(
+      and(eq(webhookConfigs.id, webhookId), eq(webhookConfigs.userId, userId)),
+    )
+    .returning({ id: webhookConfigs.id })
+    .get();
+  return Boolean(row);
+}
+
+export async function recordWebhookDeliveryLog(
+  input: WebhookDeliveryLogInput,
+): Promise<WebhookDeliveryLog> {
+  await ensureDatabase();
+  const row = await db
+    .insert(webhookDeliveryLogs)
+    .values({ ...input, message: input.message ?? null, timestamp: Date.now() })
+    .returning()
+    .get();
+  return row;
+}
+
+export async function listWebhookDeliveryLogs(
+  userId: string,
+  limit = 100,
+): Promise<WebhookDeliveryLog[]> {
+  await ensureDatabase();
+  return db
+    .select()
+    .from(webhookDeliveryLogs)
+    .where(eq(webhookDeliveryLogs.userId, userId))
+    .orderBy(desc(webhookDeliveryLogs.timestamp), desc(webhookDeliveryLogs.id))
+    .limit(Math.max(1, Math.min(Math.floor(limit), 500)))
+    .all();
 }
 
 export interface TelegramConnection {

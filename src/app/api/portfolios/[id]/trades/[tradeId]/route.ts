@@ -36,7 +36,7 @@ export async function DELETE(
     const trade = await deletePortfolioTrade(portfolioId, tradeId, user.id);
     try {
       const { refreshPortfolioSymbol } = await import("@/core/market");
-      await refreshPortfolioSymbol(portfolioId, trade.symbol);
+      await refreshPortfolioSymbol(portfolioId, trade.symbol, user.id);
     } catch (refreshError) {
       console.warn(
         `[quantify] Immediate ${trade.symbol} refresh failed after deleting trade.`,

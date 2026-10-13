@@ -34,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Portfolio not found." }, { status: 404 });
   }
   try {
-    await refreshPortfolioSymbol(portfolioId, symbol);
+    await refreshPortfolioSymbol(portfolioId, symbol, user.id);
     publishMarketUpdate({ completedAt: Date.now() });
     return Response.json({ ok: true });
   } catch (cause) {
