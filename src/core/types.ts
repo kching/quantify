@@ -86,6 +86,7 @@ export interface WebhookConfig {
   url: string;
   clientId: string | null;
   secretToken: string | null;
+  excludedPortfolioIds: number[];
   createdAt: number;
   updatedAt: number;
   createdVia?: "user" | "mcp";
@@ -124,6 +125,7 @@ export interface WebhookConfigInput {
   url: string;
   clientId?: string | null;
   secretToken?: string | null;
+  excludedPortfolioIds?: number[];
 }
 
 export type WebhookDeliveryStatus = "success" | "error";

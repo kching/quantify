@@ -61,6 +61,7 @@ function changedCandles(
 
 async function notifyWebhookConfigs<TData>(
   userId: string,
+  portfolioId: number,
   type: "candle" | "signal",
   data: TData,
   warnings: string[],
@@ -75,33 +76,40 @@ async function notifyWebhookConfigs<TData>(
     return;
   }
   await Promise.all(
-    configs.map(async (config) => {
-      try {
-        const result = await invokeWebhook(config, { type, data });
-        if (!result.delivered)
+    configs
+      .filter((config) => !config.excludedPortfolioIds.includes(portfolioId))
+      .map(async (config) => {
+        try {
+          const result = await invokeWebhook(config, {
+            type,
+            portfolioId,
+            data,
+          });
+          if (!result.delivered)
+            warnings.push(
+              `${config.url} webhook ${type}: ${result.log.message ?? "delivery failed"}`,
+            );
+        } catch (error: unknown) {
           warnings.push(
-            `${config.url} webhook ${type}: ${result.log.message ?? "delivery failed"}`,
+            `${config.url} webhook ${type}: ${error instanceof Error ? error.message : "delivery failed"}`,
           );
-      } catch (error: unknown) {
-        warnings.push(
-          `${config.url} webhook ${type}: ${error instanceof Error ? error.message : "delivery failed"}`,
-        );
-      }
-    }),
+        }
+      }),
   );
 }
 
 async function notifyCandleUpdates(
   userId: string,
+  portfolioId: number,
   updatedCandles: readonly Candle[],
   warnings: string[],
   emitted?: Set<string>,
 ): Promise<void> {
   for (const candle of updatedCandles) {
-    const key = `${userId}:${candle.symbol}:${candle.interval}:${candle.timestamp}`;
+    const key = `${userId}:${portfolioId}:${candle.symbol}:${candle.interval}:${candle.timestamp}`;
     if (emitted?.has(key)) continue;
     emitted?.add(key);
-    await notifyWebhookConfigs(userId, "candle", candle, warnings);
+    await notifyWebhookConfigs(userId, portfolioId, "candle", candle, warnings);
   }
 }
 
@@ -118,7 +126,7 @@ async function recordSignalAndNotify(
     userId,
   );
   if (state.changed)
-    await notifyWebhookConfigs(userId, "signal", signal, warnings);
+    await notifyWebhookConfigs(userId, portfolioId, "signal", signal, warnings);
   if (state.changed && state.previousSignal) {
     try {
       const connection = await getTelegramConnection(userId);
@@ -206,7 +214,7 @@ export async function refreshPortfolioSymbol(
   const updates = changedCandles(cached, retained);
   await saveCandles("1h", retained);
   const warnings: string[] = [];
-  await notifyCandleUpdates(userId, updates, warnings);
+  await notifyCandleUpdates(userId, portfolioId, updates, warnings);
   for (const warning of warnings) console.warn(`[quantify] ${warning}`);
   await capturePortfolioPerformance(portfolioId);
 }
@@ -217,7 +225,10 @@ export async function updateAllPortfolioDailyCandles(): Promise<{
 }> {
   const portfolios = await listAllPortfolios();
   const symbols = new Set<string>();
-  const usersBySymbol = new Map<string, Set<string>>();
+  const portfoliosBySymbol = new Map<
+    string,
+    Array<{ portfolioId: number; userId: string }>
+  >();
   for (const portfolio of portfolios) {
     const portfolioSymbols = new Set([
       ...portfolio.holdings.map(({ symbol }) => symbol),
@@ -225,9 +236,9 @@ export async function updateAllPortfolioDailyCandles(): Promise<{
     ]);
     for (const symbol of portfolioSymbols) {
       symbols.add(symbol);
-      const users = usersBySymbol.get(symbol) ?? new Set<string>();
-      users.add(portfolio.userId);
-      usersBySymbol.set(symbol, users);
+      const owners = portfoliosBySymbol.get(symbol) ?? [];
+      owners.push({ portfolioId: portfolio.id, userId: portfolio.userId });
+      portfoliosBySymbol.set(symbol, owners);
     }
   }
   const warnings: string[] = [];
@@ -246,8 +257,15 @@ export async function updateAllPortfolioDailyCandles(): Promise<{
         const updates = changedCandles(cached, retained);
         await saveCandles("1d", retained);
         await Promise.all(
-          [...(usersBySymbol.get(symbol) ?? [])].map((userId) =>
-            notifyCandleUpdates(userId, updates, warnings, emittedCandleEvents),
+          (portfoliosBySymbol.get(symbol) ?? []).map(
+            ({ portfolioId, userId }) =>
+              notifyCandleUpdates(
+                userId,
+                portfolioId,
+                updates,
+                warnings,
+                emittedCandleEvents,
+              ),
           ),
         );
       } catch (error: unknown) {
@@ -457,6 +475,7 @@ export async function scanPortfolio(
       const result = await scanSymbol(symbol, warnings, configured);
       await notifyCandleUpdates(
         userId,
+        portfolioId,
         result.candleUpdates,
         warnings,
         emittedCandleEvents,
@@ -536,6 +555,7 @@ export async function updateAllPortfolioMarkets(): Promise<{
           );
           await notifyCandleUpdates(
             owner.userId,
+            owner.id,
             result.candleUpdates,
             warnings,
             emittedCandleEvents,

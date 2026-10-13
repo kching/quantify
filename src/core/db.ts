@@ -95,6 +95,9 @@ const webhookConfigs = sqliteTable(
     url: text("url").notNull(),
     clientId: text("client_id"),
     secretToken: text("secret_token"),
+    excludedPortfolioIds: text("excluded_portfolio_ids")
+      .notNull()
+      .default("[]"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     createdVia: text("created_via", { enum: ["user", "mcp"] })
@@ -402,7 +405,7 @@ async function initializeDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS telegram_connections (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, chat_id TEXT NOT NULL UNIQUE, connected_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS telegram_link_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS telegram_link_tokens_user_id ON telegram_link_tokens(user_id);
-    CREATE TABLE IF NOT EXISTS webhook_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL DEFAULT 'Webhook', url TEXT NOT NULL, client_id TEXT, secret_token TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS webhook_configs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL DEFAULT 'Webhook', url TEXT NOT NULL, client_id TEXT, secret_token TEXT, excluded_portfolio_ids TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS webhook_configs_user_id ON webhook_configs(user_id);
     CREATE TABLE IF NOT EXISTS mcp_access_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
     CREATE INDEX IF NOT EXISTS mcp_access_tokens_user_id ON mcp_access_tokens(user_id);
@@ -432,6 +435,15 @@ async function initializeDatabase(): Promise<void> {
   const webhookConfigColumns = await client.execute(
     "PRAGMA table_info(webhook_configs)",
   );
+  if (
+    !webhookConfigColumns.rows.some(
+      (row) => String(row.name) === "excluded_portfolio_ids",
+    )
+  ) {
+    await client.execute(
+      "ALTER TABLE webhook_configs ADD COLUMN excluded_portfolio_ids TEXT NOT NULL DEFAULT '[]'",
+    );
+  }
   if (!webhookConfigColumns.rows.some((row) => String(row.name) === "label")) {
     await client.execute(
       "ALTER TABLE webhook_configs ADD COLUMN label TEXT NOT NULL DEFAULT 'Webhook'",
@@ -728,12 +740,29 @@ export async function listWebhookConfigs(
   userId: string,
 ): Promise<WebhookConfig[]> {
   await ensureDatabase();
-  return db
+  const rows = await db
     .select()
     .from(webhookConfigs)
     .where(eq(webhookConfigs.userId, userId))
     .orderBy(webhookConfigs.id)
     .all();
+  return rows.map(toWebhookConfig);
+}
+
+function toWebhookConfig(
+  row: typeof webhookConfigs.$inferSelect,
+): WebhookConfig {
+  let excludedPortfolioIds: number[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.excludedPortfolioIds);
+    if (Array.isArray(parsed))
+      excludedPortfolioIds = parsed.filter(
+        (id): id is number => Number.isSafeInteger(id) && id > 0,
+      );
+  } catch {
+    // Treat malformed legacy values as no exclusions.
+  }
+  return { ...row, excludedPortfolioIds };
 }
 
 export async function createWebhookConfig(
@@ -751,13 +780,14 @@ export async function createWebhookConfig(
       label: input.label ?? "Webhook",
       clientId: input.clientId ?? null,
       secretToken: input.secretToken ?? null,
+      excludedPortfolioIds: JSON.stringify(input.excludedPortfolioIds ?? []),
       createdAt: now,
       updatedAt: now,
       createdVia,
     })
     .returning()
     .get();
-  return row;
+  return toWebhookConfig(row);
 }
 
 export async function updateWebhookConfig(
@@ -773,6 +803,7 @@ export async function updateWebhookConfig(
       url: input.url,
       clientId: input.clientId ?? null,
       secretToken: input.secretToken ?? null,
+      excludedPortfolioIds: JSON.stringify(input.excludedPortfolioIds ?? []),
       updatedAt: Date.now(),
     })
     .where(
@@ -780,7 +811,7 @@ export async function updateWebhookConfig(
     )
     .returning()
     .get();
-  return row ?? null;
+  return row ? toWebhookConfig(row) : null;
 }
 
 export async function deleteWebhookConfig(
@@ -827,6 +858,10 @@ export async function updateMcpWebhookConfig(
         input.secretToken === undefined
           ? current.secretToken
           : input.secretToken,
+      excludedPortfolioIds:
+        input.excludedPortfolioIds === undefined
+          ? current.excludedPortfolioIds
+          : JSON.stringify(input.excludedPortfolioIds),
       updatedAt: Date.now(),
     })
     .where(
@@ -838,7 +873,7 @@ export async function updateMcpWebhookConfig(
     )
     .returning()
     .get();
-  return row ?? null;
+  return row ? toWebhookConfig(row) : null;
 }
 
 export async function deleteMcpWebhookConfig(

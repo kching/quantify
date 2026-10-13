@@ -4,6 +4,7 @@ import type { WebhookConfig, WebhookDeliveryLog } from "../types";
 
 export interface WebhookEventPayload<TData = unknown> {
   type: string;
+  portfolioId?: number;
   data: TData;
 }
 
