@@ -83,15 +83,15 @@ export default function McpPreferences(): React.JSX.Element {
 
   return (
     <div className="space-y-6">
-      <header>
-        <p className="text-sm uppercase tracking-wide">
-          Preferences · Integrations
-        </p>
-        <h1 className="text-3xl font-semibold">Model Context Protocol</h1>
-        <p className="mt-2 text-muted-foreground">
-          Connect AI clients to your Quantify portfolios, sweeps, signals,
-          trades, and webhooks.
-        </p>
+      <header className="page-heading">
+        <div>
+          <p className="section-kicker">PREFERENCES · INTEGRATIONS</p>
+          <h1>Model Context Protocol</h1>
+          <p className="page-subtitle">
+            Connect AI clients to your Quantify portfolios, sweeps, signals,
+            trades, and webhooks.
+          </p>
+        </div>
       </header>
 
       {newToken && (
@@ -129,9 +129,9 @@ export default function McpPreferences(): React.JSX.Element {
           </Button>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b bg-muted/40 text-muted-foreground">
+            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Configuration
@@ -147,7 +147,7 @@ export default function McpPreferences(): React.JSX.Element {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-border">
               {tokens.map((token) => (
                 <tr key={token.id}>
                   <td className="px-4 py-3">

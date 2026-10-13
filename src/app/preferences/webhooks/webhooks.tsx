@@ -196,11 +196,14 @@ export default function WebhooksPreferences({
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold">Webhooks</h1>
-        <p className="text-muted-foreground">
-          Send candle and signal updates to your downstream systems.
-        </p>
+      <header className="page-heading">
+        <div>
+          <p className="section-kicker">PREFERENCES · INTEGRATIONS</p>
+          <h1>Webhooks</h1>
+          <p className="page-subtitle">
+            Send candle and signal updates to your downstream systems.
+          </p>
+        </div>
       </header>
       {message && !dialogOpen && (
         <p
@@ -232,81 +235,85 @@ export default function WebhooksPreferences({
             Add webhook
           </Button>
         </div>
-        {webhooks.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No webhooks configured yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b bg-muted/40 text-muted-foreground">
-                <tr>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Webhook
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-medium">
-                    Last updated
-                  </th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {visibleWebhooks.map((webhook) => (
-                  <tr key={webhook.id}>
-                    <td className="max-w-0 px-4 py-3">
-                      <p className="truncate font-medium">{webhook.label}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {webhook.url}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${webhook.status === "healthy" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "bg-destructive/10 text-destructive"}`}
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
+              <tr>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Webhook
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="px-4 py-3 font-medium">
+                  Last updated
+                </th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {visibleWebhooks.map((webhook) => (
+                <tr key={webhook.id}>
+                  <td className="max-w-0 px-4 py-3">
+                    <p className="truncate font-medium">{webhook.label}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {webhook.url}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${webhook.status === "healthy" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "bg-destructive/10 text-destructive"}`}
+                    >
+                      {webhook.status === "healthy" ? "Healthy" : "Error"}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                    {webhook.lastUpdated
+                      ? new Intl.DateTimeFormat(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(webhook.lastUpdated)
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => startEdit(webhook)}
                       >
-                        {webhook.status === "healthy" ? "Healthy" : "Error"}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                      {webhook.lastUpdated
-                        ? new Intl.DateTimeFormat(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          }).format(webhook.lastUpdated)
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => startEdit(webhook)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          disabled={busy}
-                          onClick={() => void removeWebhook(webhook.id)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={busy}
+                        onClick={() => void removeWebhook(webhook.id)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {webhooks.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-8 text-center text-muted-foreground"
+                  >
+                    No webhooks configured yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         {webhooks.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <label className="flex items-center gap-2 text-muted-foreground">

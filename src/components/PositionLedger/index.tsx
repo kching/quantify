@@ -278,9 +278,7 @@ export default function Index({
                     <span>
                       {trade.quantity} @ {money.format(trade.price)}
                     </span>
-                    <small>
-                      {dateTime.format(trade.timestamp)}
-                    </small>
+                    <small>{dateTime.format(trade.timestamp)}</small>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -310,7 +308,7 @@ export default function Index({
                     Previous
                   </Button>
                   <span>
-                     Page {page} of {Math.max(pageCount, 1)}
+                    Page {page} of {Math.max(pageCount, 1)}
                   </span>
                   <Button
                     variant="ghost"

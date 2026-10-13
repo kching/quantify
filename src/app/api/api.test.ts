@@ -61,12 +61,7 @@ const saveCandles = mock(async (_interval: string, rows: readonly Candle[]) => {
 const listAlerts = mock(async () => alerts);
 const listTrades = mock(async () => recordedTrades);
 const listTradePage = mock(
-  async (
-    portfolioId: number,
-    page: number,
-    symbol?: string,
-    pageSize = 10,
-  ) => {
+  async (portfolioId: number, page: number, symbol?: string, pageSize = 10) => {
     const matches = recordedTrades.filter(
       (trade) =>
         trade.portfolioId === portfolioId &&
