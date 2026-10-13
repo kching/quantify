@@ -101,6 +101,24 @@ export interface McpAccessToken {
   revokedAt: number | null;
 }
 
+export interface McpSweep {
+  id: number;
+  userId: string;
+  symbol: string;
+  strategyId: string;
+  cadence: CandleInterval;
+  days: number;
+  totalRuns: number;
+  createdAt: number;
+}
+
+export interface McpSweepRun {
+  sweepId: number;
+  runIndex: number;
+  params: StrategyParams;
+  metrics: Record<string, number>;
+}
+
 export interface WebhookConfigInput {
   label?: string;
   url: string;

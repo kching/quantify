@@ -34,6 +34,8 @@ import type {
   WebhookDeliveryLog,
   WebhookDeliveryLogInput,
   McpAccessToken,
+  McpSweep,
+  McpSweepRun,
 } from "./types";
 
 const users = sqliteTable(
@@ -155,6 +157,38 @@ const mcpAccessTokens = sqliteTable(
     revokedAt: integer("revoked_at"),
   },
   (table) => [index("mcp_access_tokens_user_id").on(table.userId)],
+);
+const mcpSweeps = sqliteTable(
+  "mcp_sweeps",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    symbol: text("symbol").notNull(),
+    strategyId: text("strategy_id").notNull(),
+    cadence: text("cadence", { enum: ["1h", "1d"] }).notNull(),
+    days: integer("days").notNull(),
+    totalRuns: integer("total_runs").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("mcp_sweeps_user_created").on(table.userId, table.createdAt),
+  ],
+);
+const mcpSweepRuns = sqliteTable(
+  "mcp_sweep_runs",
+  {
+    sweepId: integer("sweep_id")
+      .notNull()
+      .references(() => mcpSweeps.id, { onDelete: "cascade" }),
+    runIndex: integer("run_index").notNull(),
+    params: text("params").notNull(),
+    metrics: text("metrics").notNull(),
+  },
+  (table) => [
+    uniqueIndex("mcp_sweep_runs_index").on(table.sweepId, table.runIndex),
+  ],
 );
 const holdings = sqliteTable(
   "holdings",
@@ -342,6 +376,8 @@ export const db = drizzle({
     telegramConnections,
     telegramLinkTokens,
     mcpAccessTokens,
+    mcpSweeps,
+    mcpSweepRuns,
     webhookConfigs,
     webhookDeliveryLogs,
     portfolios,
@@ -370,6 +406,9 @@ async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS webhook_configs_user_id ON webhook_configs(user_id);
     CREATE TABLE IF NOT EXISTS mcp_access_tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER);
     CREATE INDEX IF NOT EXISTS mcp_access_tokens_user_id ON mcp_access_tokens(user_id);
+    CREATE TABLE IF NOT EXISTS mcp_sweeps (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, symbol TEXT NOT NULL, strategy_id TEXT NOT NULL, cadence TEXT NOT NULL, days INTEGER NOT NULL, total_runs INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS mcp_sweeps_user_created ON mcp_sweeps(user_id, created_at);
+    CREATE TABLE IF NOT EXISTS mcp_sweep_runs (sweep_id INTEGER NOT NULL REFERENCES mcp_sweeps(id) ON DELETE CASCADE, run_index INTEGER NOT NULL, params TEXT NOT NULL, metrics TEXT NOT NULL, PRIMARY KEY(sweep_id, run_index));
     CREATE TABLE IF NOT EXISTS webhook_delivery_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, webhook_config_id INTEGER, event_type TEXT NOT NULL, url TEXT NOT NULL, status TEXT NOT NULL, status_code INTEGER, message TEXT, timestamp INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(user_id, name));
     CREATE TABLE IF NOT EXISTS holdings (portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE, symbol TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY(portfolio_id, symbol));
@@ -916,6 +955,114 @@ export async function authenticateMcpToken(
   return token;
 }
 
+export async function createMcpSweep(
+  input: Omit<McpSweep, "id" | "createdAt">,
+  runs: readonly Omit<McpSweepRun, "sweepId">[],
+): Promise<McpSweep> {
+  await ensureDatabase();
+  const sweep = await db
+    .insert(mcpSweeps)
+    .values({
+      ...input,
+      createdAt: Date.now(),
+    })
+    .returning()
+    .get();
+  for (let offset = 0; offset < runs.length; offset += 100) {
+    const batch = runs.slice(offset, offset + 100).map((run) => ({
+      sweepId: sweep.id,
+      runIndex: run.runIndex,
+      params: JSON.stringify(run.params),
+      metrics: JSON.stringify(run.metrics),
+    }));
+    await db.insert(mcpSweepRuns).values(batch).run();
+  }
+  return sweep;
+}
+
+export async function listMcpSweeps(
+  userId: string,
+  limit = 20,
+): Promise<McpSweep[]> {
+  await ensureDatabase();
+  return db
+    .select()
+    .from(mcpSweeps)
+    .where(eq(mcpSweeps.userId, userId))
+    .orderBy(desc(mcpSweeps.createdAt), desc(mcpSweeps.id))
+    .limit(Math.max(1, Math.min(Math.floor(limit), 100)))
+    .all();
+}
+
+export async function getMcpSweep(
+  userId: string,
+  sweepId: number,
+): Promise<McpSweep | null> {
+  await ensureDatabase();
+  return (
+    (await db
+      .select()
+      .from(mcpSweeps)
+      .where(and(eq(mcpSweeps.id, sweepId), eq(mcpSweeps.userId, userId)))
+      .get()) ?? null
+  );
+}
+
+export async function listMcpSweepRuns(
+  userId: string,
+  sweepId: number,
+  offset = 0,
+  limit = 50,
+): Promise<McpSweepRun[]> {
+  await ensureDatabase();
+  const ownedSweep = await getMcpSweep(userId, sweepId);
+  if (!ownedSweep) return [];
+  const rows = await db
+    .select()
+    .from(mcpSweepRuns)
+    .where(eq(mcpSweepRuns.sweepId, sweepId))
+    .orderBy(mcpSweepRuns.runIndex)
+    .limit(Math.max(1, Math.min(Math.floor(limit), 100)))
+    .offset(Math.max(0, Math.floor(offset)))
+    .all();
+  return rows.map((row) => ({
+    sweepId: row.sweepId,
+    runIndex: row.runIndex,
+    params: JSON.parse(row.params) as StrategyParams,
+    metrics: JSON.parse(row.metrics) as Record<string, number>,
+  }));
+}
+
+export async function getMcpSweepRun(
+  userId: string,
+  sweepId: number,
+  runIndex: number,
+): Promise<{ sweep: McpSweep; run: McpSweepRun } | null> {
+  await ensureDatabase();
+  const sweep = await getMcpSweep(userId, sweepId);
+  if (!sweep) return null;
+  const row = await db
+    .select()
+    .from(mcpSweepRuns)
+    .where(
+      and(
+        eq(mcpSweepRuns.sweepId, sweepId),
+        eq(mcpSweepRuns.runIndex, runIndex),
+      ),
+    )
+    .get();
+  if (!row) return null;
+  return {
+    sweep,
+    run: {
+      sweepId: row.sweepId,
+      runIndex: row.runIndex,
+      params: JSON.parse(row.params) as StrategyParams,
+      metrics: JSON.parse(row.metrics) as Record<string, number>,
+    },
+  };
+}
+
 export async function deleteMcpPortfolio(
   id: number,
   userId: string,
@@ -1116,6 +1263,21 @@ export async function createPortfolio(
     .values({ userId, name, createdAt: Date.now(), createdVia })
     .returning()
     .get();
+}
+
+export async function updatePortfolioName(
+  id: number,
+  name: string,
+  userId = "admin",
+): Promise<Portfolio | null> {
+  await ensureDatabase();
+  const row = await db
+    .update(portfolios)
+    .set({ name: name.trim() })
+    .where(and(eq(portfolios.id, id), eq(portfolios.userId, userId)))
+    .returning()
+    .get();
+  return row ?? null;
 }
 
 export async function deletePortfolio(
@@ -1547,6 +1709,38 @@ export async function recordCashTransaction(
     .get() as Promise<PortfolioCashTransaction>;
 }
 
+export async function updateCashTransaction(
+  portfolioId: number,
+  transactionId: number,
+  input: Omit<PortfolioCashTransaction, "id" | "portfolioId">,
+  userId = "admin",
+): Promise<PortfolioCashTransaction> {
+  await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId)))
+    throw new Error("Portfolio not found.");
+  const transaction = await db
+    .update(cashTransactions)
+    .set(input)
+    .where(
+      and(
+        eq(cashTransactions.portfolioId, portfolioId),
+        eq(cashTransactions.id, transactionId),
+      ),
+    )
+    .returning()
+    .get();
+  if (!transaction) throw new Error("Cash transaction not found.");
+  await db
+    .delete(holdingPerformance)
+    .where(eq(holdingPerformance.portfolioId, portfolioId))
+    .run();
+  await db
+    .delete(portfolioPerformance)
+    .where(eq(portfolioPerformance.portfolioId, portfolioId))
+    .run();
+  return transaction as PortfolioCashTransaction;
+}
+
 export async function deleteCashTransaction(
   portfolioId: number,
   transactionId: number,
@@ -1696,6 +1890,143 @@ export async function deletePortfolioTrade(
     .where(eq(portfolioPerformance.portfolioId, portfolioId))
     .run();
   return trade as PortfolioTrade;
+}
+
+export async function updatePortfolioTrade(
+  portfolioId: number,
+  tradeId: number,
+  input: Omit<PortfolioTrade, "id" | "portfolioId">,
+  userId = "admin",
+): Promise<{ trade: PortfolioTrade; previousSymbol: string }> {
+  await ensureDatabase();
+  if (!(await ownsPortfolio(portfolioId, userId)))
+    throw new Error("Portfolio not found.");
+  const existing = await db
+    .select()
+    .from(trades)
+    .where(and(eq(trades.portfolioId, portfolioId), eq(trades.id, tradeId)))
+    .get();
+  if (!existing) throw new Error("Trade not found.");
+  const allTrades = await db
+    .select()
+    .from(trades)
+    .where(eq(trades.portfolioId, portfolioId))
+    .all();
+  const candidate = { ...input, id: tradeId, portfolioId };
+  const resultingTrades = [
+    ...allTrades.filter((trade) => trade.id !== tradeId),
+    candidate,
+  ];
+  const symbols = new Set(resultingTrades.map((trade) => trade.symbol));
+  for (const symbol of symbols) {
+    let quantity = 0;
+    const ordered = resultingTrades
+      .filter((trade) => trade.symbol === symbol)
+      .sort(
+        (left, right) => left.timestamp - right.timestamp || left.id - right.id,
+      );
+    for (const trade of ordered) {
+      quantity += trade.side === "BUY" ? trade.quantity : -trade.quantity;
+      if (quantity < -1e-8)
+        throw new Error(
+          "Trade update would make a position negative before a later buy.",
+        );
+    }
+  }
+  const updated = await db
+    .update(trades)
+    .set(input)
+    .where(and(eq(trades.portfolioId, portfolioId), eq(trades.id, tradeId)))
+    .returning()
+    .get();
+  if (!updated) throw new Error("Trade not found.");
+  await db
+    .insert(holdings)
+    .values({ portfolioId, symbol: input.symbol, addedAt: input.timestamp })
+    .onConflictDoNothing()
+    .run();
+  await db
+    .delete(holdingPerformance)
+    .where(eq(holdingPerformance.portfolioId, portfolioId))
+    .run();
+  await db
+    .delete(portfolioPerformance)
+    .where(eq(portfolioPerformance.portfolioId, portfolioId))
+    .run();
+  return { trade: updated as PortfolioTrade, previousSymbol: existing.symbol };
+}
+
+async function requireMcpPortfolio(
+  portfolioId: number,
+  userId: string,
+): Promise<void> {
+  await ensureDatabase();
+  const portfolio = await db
+    .select({ id: portfolios.id })
+    .from(portfolios)
+    .where(
+      and(
+        eq(portfolios.id, portfolioId),
+        eq(portfolios.userId, userId),
+        eq(portfolios.createdVia, "mcp"),
+      ),
+    )
+    .get();
+  if (!portfolio) throw new Error("MCP-created portfolio not found.");
+}
+
+export async function recordMcpTrade(
+  input: Omit<PortfolioTrade, "id">,
+  userId: string,
+): Promise<PortfolioTrade> {
+  await requireMcpPortfolio(input.portfolioId, userId);
+  return recordTrade(input, userId);
+}
+
+export async function updateMcpTrade(
+  portfolioId: number,
+  tradeId: number,
+  input: Omit<PortfolioTrade, "id" | "portfolioId">,
+  userId: string,
+): Promise<{ trade: PortfolioTrade; previousSymbol: string }> {
+  await requireMcpPortfolio(portfolioId, userId);
+  return updatePortfolioTrade(portfolioId, tradeId, input, userId);
+}
+
+export async function deleteMcpTrade(
+  portfolioId: number,
+  tradeId: number,
+  userId: string,
+): Promise<PortfolioTrade> {
+  await requireMcpPortfolio(portfolioId, userId);
+  return deletePortfolioTrade(portfolioId, tradeId, userId);
+}
+
+export async function recordMcpCashTransaction(
+  input: Omit<PortfolioCashTransaction, "id">,
+  userId: string,
+): Promise<PortfolioCashTransaction> {
+  await requireMcpPortfolio(input.portfolioId, userId);
+  return recordCashTransaction(input, userId);
+}
+
+export async function updateMcpCashTransaction(
+  portfolioId: number,
+  transactionId: number,
+  input: Omit<PortfolioCashTransaction, "id" | "portfolioId">,
+  userId: string,
+): Promise<PortfolioCashTransaction> {
+  await requireMcpPortfolio(portfolioId, userId);
+  return updateCashTransaction(portfolioId, transactionId, input, userId);
+}
+
+export async function deleteMcpCashTransaction(
+  portfolioId: number,
+  transactionId: number,
+  userId: string,
+): Promise<PortfolioCashTransaction> {
+  await requireMcpPortfolio(portfolioId, userId);
+  return deleteCashTransaction(portfolioId, transactionId, userId);
 }
 
 export async function removeHolding(

@@ -777,4 +777,274 @@ describe("trade and performance persistence", () => {
     ).resolves.toBeUndefined();
     expect(await database.ownsPortfolio(portfolio.id, profile.id)).toBe(false);
   });
+
+  it("persists MCP sweeps and pages results only for their owner", async () => {
+    await database.ensureUserProfile({ id: "mcp-sweep-owner", name: "Owner" });
+    await database.ensureUserProfile({ id: "mcp-sweep-other", name: "Other" });
+    const sweep = await database.createMcpSweep(
+      {
+        userId: "mcp-sweep-owner",
+        symbol: "ABC",
+        strategyId: "rsi",
+        cadence: "1h",
+        days: 30,
+        totalRuns: 3,
+      },
+      [
+        {
+          runIndex: 0,
+          params: { period: 5 },
+          metrics: { strategyReturnPct: 1 },
+        },
+        {
+          runIndex: 1,
+          params: { period: 10 },
+          metrics: { strategyReturnPct: 2 },
+        },
+        {
+          runIndex: 2,
+          params: { period: 15 },
+          metrics: { strategyReturnPct: 3 },
+        },
+      ],
+    );
+    expect(await database.getMcpSweep("mcp-sweep-other", sweep.id)).toBeNull();
+    expect(
+      await database.listMcpSweepRuns("mcp-sweep-other", sweep.id),
+    ).toEqual([]);
+    expect(
+      await database.listMcpSweepRuns("mcp-sweep-owner", sweep.id, 1, 1),
+    ).toEqual([
+      {
+        sweepId: sweep.id,
+        runIndex: 1,
+        params: { period: 10 },
+        metrics: { strategyReturnPct: 2 },
+      },
+    ]);
+    expect(
+      await database.getMcpSweepRun("mcp-sweep-owner", sweep.id, 2),
+    ).toMatchObject({
+      sweep: { id: sweep.id, symbol: "ABC", cadence: "1h" },
+      run: { runIndex: 2, params: { period: 15 } },
+    });
+    expect(await database.listMcpSweeps("mcp-sweep-owner")).toMatchObject([
+      { id: sweep.id, totalRuns: 3 },
+    ]);
+    expect(await database.listMcpSweeps("mcp-sweep-other")).toEqual([]);
+
+    const portfolio = await database.createPortfolio(
+      "Agent portfolio",
+      "mcp-sweep-owner",
+      "mcp",
+    );
+    expect(portfolio.createdVia).toBe("mcp");
+    await expect(
+      database.updatePortfolioName(portfolio.id, "Renamed", "mcp-sweep-other"),
+    ).resolves.toBeNull();
+    await expect(
+      database.updatePortfolioName(portfolio.id, "Renamed", "mcp-sweep-owner"),
+    ).resolves.toMatchObject({ name: "Renamed", createdVia: "mcp" });
+    await database.addHolding(portfolio.id, "ABC", "mcp-sweep-owner");
+    const signal = await database.saveHoldingStrategy(
+      {
+        portfolioId: portfolio.id,
+        symbol: "ABC",
+        label: "RSI setup",
+        name: "rsi",
+        params: { period: 14 },
+      },
+      "mcp-sweep-owner",
+    );
+    expect(
+      await database.listHoldingStrategies(portfolio.id, "mcp-sweep-other"),
+    ).toEqual([]);
+    await database.recordSignalStateChange(
+      portfolio.id,
+      signal.id,
+      "BUY",
+      "mcp-sweep-owner",
+      now,
+    );
+    expect(
+      await database.listHoldingStrategies(portfolio.id, "mcp-sweep-owner"),
+    ).toMatchObject([
+      { id: signal.id, lastSignal: "BUY", signalUpdatedAt: now },
+    ]);
+  });
+
+  it("restricts MCP ledger changes to MCP portfolios and pages trade and cash ledgers consistently", async () => {
+    await database.ensureUserProfile({
+      id: "mcp-ledger-owner",
+      name: "Ledger Owner",
+    });
+    await database.ensureUserProfile({
+      id: "mcp-ledger-other",
+      name: "Other Owner",
+    });
+    const manual = await database.createPortfolio(
+      "Manual ledger",
+      "mcp-ledger-owner",
+    );
+    const mcp = await database.createPortfolio(
+      "Agent ledger",
+      "mcp-ledger-owner",
+      "mcp",
+    );
+    await expect(
+      database.recordMcpTrade(
+        {
+          portfolioId: manual.id,
+          symbol: "ABC",
+          side: "BUY",
+          quantity: 1,
+          price: 10,
+          brokerage: 0,
+          timestamp: now,
+        },
+        "mcp-ledger-owner",
+      ),
+    ).rejects.toThrow("MCP-created portfolio not found.");
+    await expect(
+      database.recordMcpCashTransaction(
+        {
+          portfolioId: manual.id,
+          type: "DEPOSIT",
+          amount: 100,
+          timestamp: now,
+          note: "",
+        },
+        "mcp-ledger-owner",
+      ),
+    ).rejects.toThrow("MCP-created portfolio not found.");
+
+    const buy = await database.recordMcpTrade(
+      {
+        portfolioId: mcp.id,
+        symbol: "ABC",
+        side: "BUY",
+        quantity: 10,
+        price: 100,
+        brokerage: 1,
+        timestamp: now - 10,
+      },
+      "mcp-ledger-owner",
+    );
+    const sell = await database.recordMcpTrade(
+      {
+        portfolioId: mcp.id,
+        symbol: "ABC",
+        side: "SELL",
+        quantity: 5,
+        price: 110,
+        brokerage: 1,
+        timestamp: now - 5,
+      },
+      "mcp-ledger-owner",
+    );
+    await expect(
+      database.updateMcpTrade(
+        mcp.id,
+        buy.id,
+        {
+          symbol: "ABC",
+          side: "BUY",
+          quantity: 4,
+          price: 100,
+          brokerage: 1,
+          timestamp: now - 10,
+        },
+        "mcp-ledger-owner",
+      ),
+    ).rejects.toThrow("position negative");
+    await expect(
+      database.updateMcpTrade(
+        mcp.id,
+        buy.id,
+        {
+          symbol: "ABC",
+          side: "BUY",
+          quantity: 12,
+          price: 101,
+          brokerage: 1,
+          timestamp: now - 10,
+        },
+        "mcp-ledger-owner",
+      ),
+    ).resolves.toMatchObject({ trade: { quantity: 12, price: 101 } });
+
+    const cash = await database.recordMcpCashTransaction(
+      {
+        portfolioId: mcp.id,
+        type: "DEPOSIT",
+        amount: 250,
+        timestamp: now - 3,
+        note: "Initial funding",
+      },
+      "mcp-ledger-owner",
+    );
+    await expect(
+      database.updateMcpCashTransaction(
+        mcp.id,
+        cash.id,
+        {
+          type: "WITHDRAWAL",
+          amount: 50,
+          timestamp: now - 2,
+          note: "Correction",
+        },
+        "mcp-ledger-owner",
+      ),
+    ).resolves.toMatchObject({ type: "WITHDRAWAL", amount: 50 });
+    await expect(
+      database.deleteMcpCashTransaction(mcp.id, cash.id, "mcp-ledger-other"),
+    ).rejects.toThrow("MCP-created portfolio not found.");
+
+    for (let index = 0; index < 5; index += 1) {
+      await database.recordMcpTrade(
+        {
+          portfolioId: mcp.id,
+          symbol: "XYZ",
+          side: "BUY",
+          quantity: 1,
+          price: 10,
+          brokerage: 0,
+          timestamp: now + index,
+        },
+        "mcp-ledger-owner",
+      );
+    }
+    const firstTradePage = await database.listTradePage(mcp.id, 1);
+    const secondTradePage = await database.listTradePage(mcp.id, 2);
+    const firstCashPage = await database.listCashTransactionPage(mcp.id, 1);
+    expect(firstTradePage).toMatchObject({
+      page: 1,
+      pageSize: 6,
+      total: 7,
+      pageCount: 2,
+    });
+    expect(secondTradePage).toMatchObject({
+      page: 2,
+      pageSize: firstTradePage.pageSize,
+      total: firstTradePage.total,
+      pageCount: firstTradePage.pageCount,
+    });
+    expect(firstTradePage.trades.map(({ id }) => id)).not.toContain(
+      secondTradePage.trades[0]?.id,
+    );
+    expect(firstCashPage).toMatchObject({
+      page: 1,
+      pageSize: firstTradePage.pageSize,
+      total: 1,
+      pageCount: 1,
+    });
+
+    await database.deleteMcpTrade(mcp.id, sell.id, "mcp-ledger-owner");
+    await database.deleteMcpTrade(mcp.id, buy.id, "mcp-ledger-owner");
+    await database.deleteMcpCashTransaction(
+      mcp.id,
+      cash.id,
+      "mcp-ledger-owner",
+    );
+  });
 });
