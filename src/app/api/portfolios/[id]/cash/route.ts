@@ -22,9 +22,19 @@ export async function GET(
     return Response.json({ error: "Portfolio not found." }, { status: 404 });
   const params = new URL(request.url).searchParams;
   const page = params.has("page") ? Number(params.get("page")) : 1;
-  if (!Number.isSafeInteger(page) || page < 1)
-    return Response.json({ error: "Enter a valid page." }, { status: 400 });
-  return Response.json(await listCashTransactionPage(id, page));
+  const pageSize = params.has("pageSize") ? Number(params.get("pageSize")) : 10;
+  if (
+    !Number.isSafeInteger(page) ||
+    page < 1 ||
+    !Number.isSafeInteger(pageSize) ||
+    pageSize < 1 ||
+    pageSize > 200
+  )
+    return Response.json(
+      { error: "Enter a valid page and page size (1–200)." },
+      { status: 400 },
+    );
+  return Response.json(await listCashTransactionPage(id, page, pageSize));
 }
 
 export async function POST(

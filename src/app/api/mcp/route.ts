@@ -323,7 +323,7 @@ function makeServer(userId: string): McpServer {
       inputSchema: z.object({
         sweepId: z.number().int().positive(),
         offset: z.number().int().min(0).default(0),
-        limit: z.number().int().min(1).max(100).default(50),
+        limit: z.number().int().min(1).max(200).default(10),
       }),
     },
     async ({ sweepId, offset, limit }) => {
@@ -694,12 +694,13 @@ function makeServer(userId: string): McpServer {
       inputSchema: z.object({
         portfolioId: z.number().int().positive(),
         page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(200).default(10),
       }),
     },
-    async ({ portfolioId, page }) => {
+    async ({ portfolioId, page, pageSize }) => {
       if (!(await ownsPortfolio(portfolioId, userId)))
         throw new Error("Portfolio not found.");
-      const history = await listCashTransactionPage(portfolioId, page);
+      const history = await listCashTransactionPage(portfolioId, page, pageSize);
       const performance = await listPerformance(portfolioId);
       return toolResult({
         portfolioId,
@@ -960,14 +961,17 @@ function makeServer(userId: string): McpServer {
       inputSchema: z.object({
         portfolioId: z.number().int().positive(),
         page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(200).default(10),
         symbol: z.string().optional(),
       }),
     },
-    async ({ portfolioId, page, symbol: rawSymbol }) => {
+    async ({ portfolioId, page, pageSize, symbol: rawSymbol }) => {
       if (!(await ownsPortfolio(portfolioId, userId)))
         throw new Error("Portfolio not found.");
       const symbol = rawSymbol ? validSymbol(rawSymbol) : undefined;
-      return toolResult(await listTradePage(portfolioId, page, symbol));
+      return toolResult(
+        await listTradePage(portfolioId, page, symbol, pageSize),
+      );
     },
   );
   server.registerTool(

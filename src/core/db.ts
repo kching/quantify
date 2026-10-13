@@ -1047,7 +1047,7 @@ export async function listMcpSweepRuns(
   userId: string,
   sweepId: number,
   offset = 0,
-  limit = 50,
+  limit = 10,
 ): Promise<McpSweepRun[]> {
   await ensureDatabase();
   const ownedSweep = await getMcpSweep(userId, sweepId);
@@ -1057,7 +1057,7 @@ export async function listMcpSweepRuns(
     .from(mcpSweepRuns)
     .where(eq(mcpSweepRuns.sweepId, sweepId))
     .orderBy(mcpSweepRuns.runIndex)
-    .limit(Math.max(1, Math.min(Math.floor(limit), 100)))
+    .limit(Math.max(1, Math.min(Math.floor(limit), 200)))
     .offset(Math.max(0, Math.floor(offset)))
     .all();
   return rows.map((row) => ({
@@ -1628,9 +1628,10 @@ export async function listTradePage(
   portfolioId: number,
   requestedPage: number,
   symbol?: string,
+  requestedPageSize = 10,
 ): Promise<PortfolioTradePage> {
   await ensureDatabase();
-  const pageSize = 6;
+  const pageSize = Math.max(1, Math.min(Math.floor(requestedPageSize), 200));
   const where = symbol
     ? and(eq(trades.portfolioId, portfolioId), eq(trades.symbol, symbol))
     : eq(trades.portfolioId, portfolioId);
@@ -1693,9 +1694,10 @@ export interface PortfolioCashTransactionPage {
 export async function listCashTransactionPage(
   portfolioId: number,
   requestedPage: number,
+  requestedPageSize = 10,
 ): Promise<PortfolioCashTransactionPage> {
   await ensureDatabase();
-  const pageSize = 6;
+  const pageSize = Math.max(1, Math.min(Math.floor(requestedPageSize), 200));
   const where = eq(cashTransactions.portfolioId, portfolioId);
   const countRow = await db
     .select({ count: sql<number>`count(*)` })

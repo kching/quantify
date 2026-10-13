@@ -61,7 +61,12 @@ const saveCandles = mock(async (_interval: string, rows: readonly Candle[]) => {
 const listAlerts = mock(async () => alerts);
 const listTrades = mock(async () => recordedTrades);
 const listTradePage = mock(
-  async (portfolioId: number, page: number, symbol?: string) => {
+  async (
+    portfolioId: number,
+    page: number,
+    symbol?: string,
+    pageSize = 10,
+  ) => {
     const matches = recordedTrades.filter(
       (trade) =>
         trade.portfolioId === portfolioId &&
@@ -72,7 +77,6 @@ const listTradePage = mock(
         Number(right.timestamp) - Number(left.timestamp) ||
         Number(right.id) - Number(left.id),
     );
-    const pageSize = 6;
     const pageCount = Math.ceil(matches.length / pageSize);
     const safePage = Math.min(page, Math.max(pageCount, 1));
     return {
@@ -103,12 +107,11 @@ const deletePortfolioTrade = mock(
 );
 const capturePortfolioPerformance = mock(async () => undefined);
 const listCashTransactionPage = mock(
-  async (portfolioId: number, page: number) => {
+  async (portfolioId: number, page: number, pageSize = 10) => {
     const matches = recordedCashTransactions.filter(
       (transaction) => transaction.portfolioId === portfolioId,
     );
     const total = matches.length;
-    const pageSize = 6;
     const pageCount = Math.ceil(total / pageSize);
     const safePage = Math.min(page, Math.max(pageCount, 1));
     const ordered = [...matches].sort(
@@ -466,7 +469,7 @@ describe("API route handlers", () => {
         tickers: [],
         total: 0,
         page: 1,
-        pageSize: 6,
+        pageSize: 10,
         pageCount: 0,
       });
       expect(
@@ -479,7 +482,7 @@ describe("API route handlers", () => {
       ).toBe(400);
     });
 
-    it("filters and paginates trade requests at six entries per page", async () => {
+    it("filters and paginates trade requests at the requested page size", async () => {
       recordedTrades = Array.from({ length: 8 }, (_, index) => ({
         id: index + 1,
         portfolioId: 1,
@@ -487,7 +490,7 @@ describe("API route handlers", () => {
         timestamp: index + 1,
       }));
       const response = await tradesRoute.GET(
-        request("/api/portfolios/1/trades?page=2&symbol=xro.ax"),
+        request("/api/portfolios/1/trades?page=2&pageSize=6&symbol=xro.ax"),
         context("1"),
       );
       expect(response.status).toBe(200);
@@ -505,11 +508,19 @@ describe("API route handlers", () => {
         pageSize: 6,
         pageCount: 1,
       });
-      expect(listTradePage).toHaveBeenCalledWith(1, 2, "XRO.AX");
+      expect(listTradePage).toHaveBeenCalledWith(1, 2, "XRO.AX", 6);
       expect(
         (
           await tradesRoute.GET(
             request("/api/portfolios/1/trades?page=0"),
+            context("1"),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await tradesRoute.GET(
+            request("/api/portfolios/1/trades?pageSize=201"),
             context("1"),
           )
         ).status,
@@ -634,7 +645,7 @@ describe("API route handlers", () => {
     );
     expect(getResponse.status).toBe(200);
     expect((await payload(getResponse)).transactions).toEqual([]);
-    expect(listCashTransactionPage).toHaveBeenCalledWith(1, 1);
+    expect(listCashTransactionPage).toHaveBeenCalledWith(1, 1, 10);
 
     expect(
       (

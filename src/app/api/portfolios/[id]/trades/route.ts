@@ -19,19 +19,25 @@ export async function GET(
     return Response.json({ error: "Portfolio not found." }, { status: 404 });
   const params = new URL(request.url).searchParams;
   const page = params.has("page") ? Number(params.get("page")) : 1;
+  const pageSize = params.has("pageSize") ? Number(params.get("pageSize")) : 10;
   const symbolInput = params.get("symbol")?.trim().toUpperCase() ?? "";
   const symbol = symbolInput;
   if (
     !Number.isSafeInteger(page) ||
     page < 1 ||
+    !Number.isSafeInteger(pageSize) ||
+    pageSize < 1 ||
+    pageSize > 200 ||
     (symbol && !/^[A-Z0-9.^-]{1,20}$/.test(symbol))
   ) {
     return Response.json(
-      { error: "Enter a valid page and ticker filter." },
+      { error: "Enter a valid page size (1–200), page and ticker filter." },
       { status: 400 },
     );
   }
-  return Response.json(await listTradePage(id, page, symbol || undefined));
+  return Response.json(
+    await listTradePage(id, page, symbol || undefined, pageSize),
+  );
 }
 
 export async function POST(

@@ -645,9 +645,14 @@ describe("trade and performance persistence", () => {
       );
     }
 
-    const pageOne = await database.listTradePage(portfolio.id, 1);
-    const pageTwo = await database.listTradePage(portfolio.id, 2);
-    const filtered = await database.listTradePage(portfolio.id, 1, "BBB.AX");
+    const pageOne = await database.listTradePage(portfolio.id, 1, undefined, 6);
+    const pageTwo = await database.listTradePage(portfolio.id, 2, undefined, 6);
+    const filtered = await database.listTradePage(
+      portfolio.id,
+      1,
+      "BBB.AX",
+      6,
+    );
     expect(pageOne.trades).toHaveLength(6);
     expect(pageOne.trades[0].id).toBe(insertedTrades[7].id);
     expect(pageTwo.trades.map((trade) => trade.id)).toEqual([
@@ -1014,9 +1019,9 @@ describe("trade and performance persistence", () => {
         "mcp-ledger-owner",
       );
     }
-    const firstTradePage = await database.listTradePage(mcp.id, 1);
-    const secondTradePage = await database.listTradePage(mcp.id, 2);
-    const firstCashPage = await database.listCashTransactionPage(mcp.id, 1);
+    const firstTradePage = await database.listTradePage(mcp.id, 1, undefined, 6);
+    const secondTradePage = await database.listTradePage(mcp.id, 2, undefined, 6);
+    const firstCashPage = await database.listCashTransactionPage(mcp.id, 1, 6);
     expect(firstTradePage).toMatchObject({
       page: 1,
       pageSize: 6,
