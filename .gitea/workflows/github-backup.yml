@@ -1,0 +1,50 @@
+name: Sync GitHub backup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Load backup repository
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repository="$(sed -n -E 's/^github_backup_repository:[[:space:]]*["'"']?([^"'"']*)["'"']?[[:space:]]*$/\1/p' .gitea/vars.yml | head -n 1)"
+          if [[ -z "$repository" ]]; then
+            echo "Set github_backup_repository in .gitea/vars.yml to OWNER/REPOSITORY" >&2
+            exit 1
+          fi
+          if [[ ! "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "github_backup_repository must use OWNER/REPOSITORY format" >&2
+            exit 1
+          fi
+
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+
+      - name: Push main to GitHub backup
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+          BACKUP_REPOSITORY: ${{ steps.vars.outputs.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$BACKUP_TOKEN" ]]; then
+            echo "Set the BACKUP_TOKEN secret in Gitea Actions" >&2
+            exit 1
+          fi
+
+          git remote add github "https://github.com/${BACKUP_REPOSITORY}.git"
+          auth_header="$(printf 'x-access-token:%s' "$BACKUP_TOKEN" | base64 -w 0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${auth_header}" \
+            push github refs/heads/main:refs/heads/main

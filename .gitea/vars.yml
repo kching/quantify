@@ -3,3 +3,4 @@ application_name: quantify
 docker_retention_count: 10
 server_hostname: "labs.internal"
 working_directory: "/mnt/shared/quantify"
+github_backup_repository: "kching/quantify"
