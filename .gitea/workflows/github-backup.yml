@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          repository="$(sed -n -E 's/^github_backup_repository:[[:space:]]*["'"']?([^"'"']*)["'"']?[[:space:]]*$/\1/p' .gitea/vars.yml | head -n 1)"
+          repository="$(awk -F: '$1 == "github_backup_repository" { gsub(/^[[:space:]]*"|"[[:space:]]*$/, "", $2); print $2; exit }' .gitea/vars.yml)"
           if [[ -z "$repository" ]]; then
             echo "Set github_backup_repository in .gitea/vars.yml to OWNER/REPOSITORY" >&2
             exit 1
